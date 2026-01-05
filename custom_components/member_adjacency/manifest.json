@@ -1,10 +1,10 @@
 {
   "domain": "member_adjacency",
-  "name": "Member Adjacency Distance",
-  "version": "1.0.0",
+  "name": "인접센서 (Member Adjacency Distance)",
+  "version": "1.0.2",
   "config_flow": true,
-  "documentation": "https://github.com/1bobby-git/ha-member-adjacency",
-  "issue_tracker": "https://github.com/1bobby-git/ha-member-adjacency/issues",
+  "documentation": "https://github.com/1bobby-git/HA-Member-Adjacency",
+  "issue_tracker": "https://github.com/1bobby-git/HA-Member-Adjacency/issues",
   "codeowners": ["@1bobby-git"],
   "iot_class": "calculated"
 }

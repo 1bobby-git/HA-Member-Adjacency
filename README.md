@@ -1,30 +1,70 @@
-# Member Adjacency Distance (Home Assistant Custom Integration)
+# 인접센서 (Member Adjacency Distance)
 
-두 개의 위치(좌표) 엔티티 사이의 거리를 **미터(m)** 로 계산하는 센서를 생성합니다.
-주로 Home Assistant `mobile_app` 통합의 `*_geocoded_location` 센서(속성 `Location = [lat, lon]`)를 대상으로 사용합니다.
+두 개의 위치(좌표) 엔티티 사이의 거리를 계산하는 Home Assistant 커스텀 통합입니다.  
+주로 `mobile_app` 통합에서 제공되는 `*_geocoded_location` 센서를 대상으로 사용합니다.
 
-## Features
-- 거리 센서: meters (device_class: distance, state_class: measurement)
-- 이벤트 기반 업데이트(두 엔티티 상태 변화 시 즉시 갱신)
-- 속성 `proximity`: 임계값(m)보다 가까우면 `true`
+---
 
-## Supported coordinate sources
-아래 중 하나만 만족하면 됩니다.
-- `attributes.Location == [lat, lon]`
-- `attributes.latitude` & `attributes.longitude`
-- 상태(state)가 `"lat,lon"` 문자열
+## 기능 (Features)
 
-## Install via HACS (Custom repository)
-1. HACS → 오른쪽 상단 ⋮ → **Custom repositories**
-2. 이 레포 URL 입력: `https://github.com/1bobby-git/ha-member-adjacency`
-3. Type: **Integration**
+- 두 엔티티 간 거리 센서 생성
+  - 1000m 미만: **m**
+  - 1000m 이상: **km** (자동 전환)
+  - 항상 속성에 `distance_m`, `distance_km`를 함께 제공
+- `proximity` 속성 제공 (true/false)
+  - **Proximity = 두 위치가 임계값(threshold) 이하로 가까우면 true**
+  - 활용 예: 자동화(Automation) 조건으로 `proximity == true` 사용
+
+---
+
+## 설치 (HACS)
+
+[![Open your Home Assistant instance and show the HACS repository.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=1bobby-git&repository=HA-Member-Adjacency&category=integration)
+
+1. HACS → Integrations → 우측 상단 ⋮ → Custom repositories  
+2. Repository: `https://github.com/1bobby-git/HA-Member-Adjacency`  
+3. Category: Integration  
 4. 설치 후 Home Assistant 재시작
 
-## Configuration
-Home Assistant UI:
-- 설정 → 기기 및 서비스 → 통합 추가 → **Member Adjacency Distance**
-- Entity A / Entity B 선택
-- (옵션) 센서 이름 / 아이콘 / 반올림 / 근접 임계값(m)
+---
 
-## Notes
-- 두 엔티티가 좌표를 제공하지 않으면 센서 값은 `unknown`(native_value None)으로 표시됩니다.
+## 설정 (Setup)
+
+[![Open your Home Assistant instance and start setting up the integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=member_adjacency)
+
+1. 설정 → 기기 및 서비스 → 통합 추가 → **인접센서**
+2. Entity A / Entity B 선택
+   - 기본적으로 `mobile_app`의 `*_geocoded_location` 센서가 자동 추천됩니다.
+   - 선택 목록도 `*_geocoded_location` 센서만 표시되도록 제한됩니다.
+3. Proximity threshold (m) 입력
+   - 예: 500 → 500m 이내면 `proximity: true`
+
+---
+
+## 지원하는 좌표 형태
+
+아래 중 하나면 동작합니다.
+
+- `attributes.Location == [lat, lon]`  (권장: 질문에서 사용하던 형태)
+- `attributes.latitude` 와 `attributes.longitude`
+- state 가 `"lat,lon"` 문자열
+
+---
+
+## 센서 출력 예시
+
+- 상태(state): 거리 값 (단위: m 또는 km 자동 전환)
+- 속성(attributes):
+  - `entity_a`, `entity_b`
+  - `distance_m`, `distance_km`
+  - `proximity_threshold_m`
+  - `proximity` (threshold 이하이면 true)
+  - `coords_a`, `coords_b`
+
+---
+
+## Proximity 활용 예 (Automation)
+
+- 조건: `sensor.인접센서`의 `proximity` 속성이 `true`일 때 실행
+
+(예: 가족이 500m 이내로 접근하면 알림, 문열기 등)

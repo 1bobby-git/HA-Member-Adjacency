@@ -1,36 +1,31 @@
 {
+  "title": "Member Adjacency Distance",
   "config": {
     "step": {
       "user": {
-        "title": "Member Adjacency",
-        "description": "Select two entities that expose coordinates. (e.g., mobile_app *_geocoded_location with attributes.Location = [lat, lon])",
+        "title": "인접센서",
+        "description": "mobile_app의 *_geocoded_location 센서 2개를 선택하고, 임계값(m) 이하로 가까우면 proximity=true가 됩니다.",
         "data": {
           "entity_a": "Entity A",
           "entity_b": "Entity B",
-          "name": "Sensor name",
-          "icon": "Icon (mdi:...)",
-          "rounding": "Rounding (decimals)",
           "proximity_threshold_m": "Proximity threshold (m)"
         }
       }
     },
     "error": {
-      "invalid_entity": "Selected entity does not expose coordinates (Location or latitude/longitude)."
+      "invalid_entity": "선택한 엔티티에서 좌표를 찾을 수 없습니다. (Location 또는 latitude/longitude 필요)",
+      "not_geocoded": "*_geocoded_location 센서만 선택할 수 있습니다."
     },
     "abort": {
-      "already_configured": "This pair is already configured."
+      "already_configured": "이 엔티티 쌍은 이미 구성되어 있습니다."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Options",
+        "title": "옵션",
+        "description": "임계값(m) 이하로 가까우면 proximity=true 입니다.",
         "data": {
-          "entity_a": "Entity A",
-          "entity_b": "Entity B",
-          "name": "Sensor name",
-          "icon": "Icon (mdi:...)",
-          "rounding": "Rounding (decimals)",
           "proximity_threshold_m": "Proximity threshold (m)"
         }
       }

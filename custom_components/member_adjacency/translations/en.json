@@ -1,21 +1,20 @@
 {
+  "title": "Member Adjacency Distance",
   "config": {
     "step": {
       "user": {
-        "title": "Member Adjacency",
-        "description": "Select two entities that expose coordinates. (e.g., mobile_app *_geocoded_location with attributes.Location = [lat, lon])",
+        "title": "Adjacency Sensor",
+        "description": "Select two *_geocoded_location sensors and set a threshold (m). If distance is below the threshold, proximity=true.",
         "data": {
           "entity_a": "Entity A",
           "entity_b": "Entity B",
-          "name": "Sensor name",
-          "icon": "Icon (mdi:...)",
-          "rounding": "Rounding (decimals)",
           "proximity_threshold_m": "Proximity threshold (m)"
         }
       }
     },
     "error": {
-      "invalid_entity": "Selected entity does not expose coordinates (Location or latitude/longitude)."
+      "invalid_entity": "Selected entity does not expose coordinates (Location or latitude/longitude).",
+      "not_geocoded": "Only *_geocoded_location sensors are allowed."
     },
     "abort": {
       "already_configured": "This pair is already configured."
@@ -25,12 +24,8 @@
     "step": {
       "init": {
         "title": "Options",
+        "description": "If distance is below the threshold, proximity=true.",
         "data": {
-          "entity_a": "Entity A",
-          "entity_b": "Entity B",
-          "name": "Sensor name",
-          "icon": "Icon (mdi:...)",
-          "rounding": "Rounding (decimals)",
           "proximity_threshold_m": "Proximity threshold (m)"
         }
       }
