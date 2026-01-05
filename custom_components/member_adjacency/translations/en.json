@@ -4,11 +4,10 @@
     "step": {
       "user": {
         "title": "Adjacency Sensor",
-        "description": "Pick one anchor (A) and multiple targets (B) from *_geocoded_location sensors. Hysteresis: enter<=entry, leave>=exit.",
+        "description": "Configure one A-B pair. Add the integration again to create another pair like A-C.",
         "data": {
-          "anchor_entity": "Anchor sensor (A)",
-          "target_entities": "Target sensors (B)",
-          "threshold_preset": "Threshold preset",
+          "entity_a": "Entity A",
+          "entity_b": "Entity B",
           "entry_threshold_m": "Entry threshold (m)",
           "exit_threshold_m": "Exit threshold (m)",
           "debounce_seconds": "Debounce (seconds)",
@@ -18,13 +17,13 @@
       }
     },
     "error": {
+      "invalid_entity": "Selected entity does not expose coordinates (Location or latitude/longitude).",
       "not_geocoded": "Only *_geocoded_location sensors are allowed.",
-      "targets_contains_anchor": "Targets contain the anchor.",
-      "targets_empty": "Select at least one target.",
+      "same_entity": "Entity A and B must be different.",
       "exit_lt_entry": "Exit threshold must be >= entry threshold."
     },
     "abort": {
-      "already_configured": "This configuration already exists."
+      "already_configured": "This pair is already configured."
     }
   },
   "options": {
@@ -33,7 +32,6 @@
         "title": "Options",
         "description": "Change thresholds/accuracy/debounce/unit.",
         "data": {
-          "threshold_preset": "Threshold preset",
           "entry_threshold_m": "Entry threshold (m)",
           "exit_threshold_m": "Exit threshold (m)",
           "debounce_seconds": "Debounce (seconds)",

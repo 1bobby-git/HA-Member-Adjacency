@@ -4,11 +4,10 @@
     "step": {
       "user": {
         "title": "인접센서",
-        "description": "기준(A) 1개와 대상(B) 여러 개를 선택하여 거리/근접을 계산합니다. 히스테리시스: entry 이하 진입, exit 이상 이탈.",
+        "description": "A-B 한 쌍만 설정합니다. 필요하면 통합을 다시 추가해서 A-C 같은 다른 쌍을 만들 수 있습니다.",
         "data": {
-          "anchor_entity": "기준(A) 센서",
-          "target_entities": "대상(B) 센서들",
-          "threshold_preset": "임계값 프리셋",
+          "entity_a": "엔티티 A",
+          "entity_b": "엔티티 B",
           "entry_threshold_m": "진입 임계값 (m)",
           "exit_threshold_m": "이탈 임계값 (m)",
           "debounce_seconds": "디바운스 (초)",
@@ -18,22 +17,21 @@
       }
     },
     "error": {
+      "invalid_entity": "선택한 엔티티에서 좌표를 찾을 수 없습니다. (Location 또는 latitude/longitude 필요)",
       "not_geocoded": "*_geocoded_location 센서만 선택할 수 있습니다.",
-      "targets_contains_anchor": "대상 목록에 기준(A)이 포함되어 있습니다.",
-      "targets_empty": "대상(B)을 최소 1개 이상 선택하세요.",
+      "same_entity": "A와 B는 서로 다른 엔티티여야 합니다.",
       "exit_lt_entry": "이탈 임계값은 진입 임계값보다 같거나 커야 합니다."
     },
     "abort": {
-      "already_configured": "이 구성은 이미 등록되어 있습니다."
+      "already_configured": "이 엔티티 쌍은 이미 구성되어 있습니다."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "옵션",
-        "description": "임계값/정확도/디바운스/단위를 변경합니다.",
+        "description": "임계값/정확도/디바운스/단위 고정을 변경합니다.",
         "data": {
-          "threshold_preset": "임계값 프리셋",
           "entry_threshold_m": "진입 임계값 (m)",
           "exit_threshold_m": "이탈 임계값 (m)",
           "debounce_seconds": "디바운스 (초)",

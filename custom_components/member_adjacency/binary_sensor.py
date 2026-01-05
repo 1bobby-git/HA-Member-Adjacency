@@ -4,82 +4,59 @@ from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, DEFAULT_NAME_KO
-from .coordinator import MemberAdjacencyCoordinator
-
-
-def _obj_id(entity_id: str) -> str:
-    return entity_id.split(".", 1)[1]
+from .sensor import _short, _get, CONF_ENTITY_A, CONF_ENTITY_B, _obj_id  # reuse helpers
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
-    coord: MemberAdjacencyCoordinator = hass.data[DOMAIN][entry.entry_id]
+    a = _get(entry, CONF_ENTITY_A, "")
+    b = _get(entry, CONF_ENTITY_B, "")
+
+    a_id = _short(a)
+    b_id = _short(b)
+    pair_key = f"{a_id}_{b_id}" if a_id and b_id else entry.entry_id
+
     ent_reg = er.async_get(hass)
-
-    entities: list[BinarySensorEntity] = []
-
-    # any proximity
     ent_reg.async_get_or_create(
         "binary_sensor",
         DOMAIN,
-        f"{entry.entry_id}_any_proximity",
-        suggested_object_id="member_adjacency_proximity",
+        f"{entry.entry_id}_proximity",
+        suggested_object_id=f"member_adjacency_{pair_key}_proximity",
         config_entry=entry,
     )
-    entities.append(AnyProximityBinary(coord, entry, unique_suffix="any_proximity"))
 
-    # per-target proximity
-    for t in coord.targets:
-        oid = _obj_id(t)
-        ent_reg.async_get_or_create(
-            "binary_sensor",
-            DOMAIN,
-            f"{entry.entry_id}_{oid}_proximity",
-            suggested_object_id=f"member_adjacency_{oid}_proximity",
-            config_entry=entry,
-        )
-        entities.append(PairProximityBinary(coord, entry, target=t, unique_suffix=f"{oid}_proximity"))
-
-    async_add_entities(entities)
+    async_add_entities([MemberAdjacencyProximityBinary(hass, entry)])
 
 
-class AnyProximityBinary(CoordinatorEntity[MemberAdjacencyCoordinator], BinarySensorEntity):
+class MemberAdjacencyProximityBinary(BinarySensorEntity):
     _attr_should_poll = False
 
-    def __init__(self, coord: MemberAdjacencyCoordinator, entry: ConfigEntry, *, unique_suffix: str) -> None:
-        super().__init__(coord)
-        self._attr_unique_id = f"{entry.entry_id}_{unique_suffix}"
-        self._attr_name = f"{DEFAULT_NAME_KO} 전체 근접"
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        self.hass = hass
+        self.entry = entry
+        self.entity_a = _get(entry, CONF_ENTITY_A, "")
+        self.entity_b = _get(entry, CONF_ENTITY_B, "")
+
+        self._attr_unique_id = f"{entry.entry_id}_proximity"
+        self._attr_name = f"{DEFAULT_NAME_KO} {_short(self.entity_a)}↔{_short(self.entity_b)} 근접"
 
     @property
     def is_on(self) -> bool:
-        return self.coordinator.data.any_proximity
+        # proximity는 distance 센서가 계산해 attributes에 넣고 있으므로 그 값을 읽어온다.
+        # (동일 entry_id 기반으로 sensor unique_id가 고정이라, entity_id는 레지스트리 상황에 따라 다를 수 있음)
+        # 안정적으로는 동일 기기(통합) 내 센서 중 distance 센서의 attributes를 읽는게 가장 단순함.
+        # 여기서는 이름 기반 탐색 대신, entity_registry에서 이 entry의 distance 센서를 찾는다.
+        from homeassistant.helpers import entity_registry as er
 
+        ent_reg = er.async_get(self.hass)
+        # platform = sensor, unique_id suffix = _distance
+        ent = ent_reg.async_get_entity_id("sensor", DOMAIN, f"{self.entry.entry_id}_distance")
+        if not ent:
+            return False
 
-class PairProximityBinary(CoordinatorEntity[MemberAdjacencyCoordinator], BinarySensorEntity):
-    _attr_should_poll = False
+        st = self.hass.states.get(ent)
+        if not st:
+            return False
 
-    def __init__(self, coord: MemberAdjacencyCoordinator, entry: ConfigEntry, *, target: str, unique_suffix: str) -> None:
-        super().__init__(coord)
-        self._target = target
-        self._attr_unique_id = f"{entry.entry_id}_{unique_suffix}"
-        self._attr_name = f"{DEFAULT_NAME_KO} {target} 근접"
-
-    @property
-    def is_on(self) -> bool:
-        pd = self.coordinator.data.pairs.get(self._target)
-        return bool(pd and pd.proximity)
-
-    @property
-    def extra_state_attributes(self):
-        pd = self.coordinator.data.pairs.get(self._target)
-        if not pd:
-            return {"target": self._target}
-        return {
-            "target": self._target,
-            "last_changed": pd.last_changed,
-            "last_entered": pd.last_entered,
-            "last_left": pd.last_left,
-        }
+        return bool((st.attributes or {}).get("proximity", False))

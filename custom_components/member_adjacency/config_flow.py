@@ -9,22 +9,20 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 
 from .const import (
-    CONF_ANCHOR,
-    CONF_TARGETS,
-    CONF_PRESET,
+    CONF_ENTITY_A,
+    CONF_ENTITY_B,
     CONF_ENTRY_THRESHOLD_M,
     CONF_EXIT_THRESHOLD_M,
     CONF_DEBOUNCE_SECONDS,
     CONF_MAX_ACCURACY_M,
     CONF_FORCE_METERS,
-    DEFAULT_DEBOUNCE_SECONDS,
     DEFAULT_ENTRY_THRESHOLD_M,
     DEFAULT_EXIT_THRESHOLD_M,
+    DEFAULT_DEBOUNCE_SECONDS,
     DEFAULT_MAX_ACCURACY_M,
     DEFAULT_FORCE_METERS,
     DOMAIN,
     GEO_SUFFIX,
-    PRESET_OPTIONS,
 )
 
 
@@ -37,11 +35,37 @@ def _geocoded_candidates(hass: HomeAssistant) -> list[str]:
     return out
 
 
-def _default_targets(candidates: list[str], anchor: str | None) -> list[str]:
-    if not candidates:
-        return []
-    c = [x for x in candidates if x != anchor]
-    return c[:2]
+def _try_get_coords_from_state(state) -> tuple[float, float] | None:
+    if state is None:
+        return None
+    attrs = state.attributes or {}
+
+    loc = attrs.get("Location")
+    if isinstance(loc, (list, tuple)) and len(loc) == 2:
+        try:
+            return (float(loc[0]), float(loc[1]))
+        except (TypeError, ValueError):
+            return None
+
+    if "latitude" in attrs and "longitude" in attrs:
+        try:
+            return (float(attrs["latitude"]), float(attrs["longitude"]))
+        except (TypeError, ValueError):
+            return None
+
+    if isinstance(state.state, str) and "," in state.state:
+        parts = [p.strip() for p in state.state.split(",")]
+        if len(parts) == 2:
+            try:
+                return (float(parts[0]), float(parts[1]))
+            except (TypeError, ValueError):
+                return None
+
+    return None
+
+
+def _has_coords(hass: HomeAssistant, entity_id: str) -> bool:
+    return _try_get_coords_from_state(hass.states.get(entity_id)) is not None
 
 
 class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -49,35 +73,28 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         errors: dict[str, str] = {}
-        candidates = _geocoded_candidates(self.hass)
 
-        default_anchor = candidates[0] if candidates else None
-        default_targets = _default_targets(candidates, default_anchor)
+        candidates = _geocoded_candidates(self.hass)
+        default_a = candidates[0] if len(candidates) >= 1 else None
+        default_b = candidates[1] if len(candidates) >= 2 else None
 
         if user_input is not None:
-            anchor = user_input[CONF_ANCHOR]
-            targets = user_input[CONF_TARGETS]
+            a = user_input[CONF_ENTITY_A]
+            b = user_input[CONF_ENTITY_B]
 
-            if not anchor.endswith(GEO_SUFFIX):
-                errors[CONF_ANCHOR] = "not_geocoded"
-            if any(not t.endswith(GEO_SUFFIX) for t in targets):
-                errors[CONF_TARGETS] = "not_geocoded"
+            if a == b:
+                errors[CONF_ENTITY_B] = "same_entity"
 
-            if anchor in targets:
-                errors[CONF_TARGETS] = "targets_contains_anchor"
+            if candidates:
+                if not a.endswith(GEO_SUFFIX):
+                    errors[CONF_ENTITY_A] = "not_geocoded"
+                if not b.endswith(GEO_SUFFIX):
+                    errors[CONF_ENTITY_B] = "not_geocoded"
 
-            if not targets:
-                errors[CONF_TARGETS] = "targets_empty"
-
-            # preset -> entry default handling
-            preset = user_input.get(CONF_PRESET, "custom")
-            if preset in PRESET_OPTIONS and PRESET_OPTIONS[preset] is not None:
-                user_input[CONF_ENTRY_THRESHOLD_M] = PRESET_OPTIONS[preset]
-                # keep exit at least entry + 200
-                user_input[CONF_EXIT_THRESHOLD_M] = max(
-                    user_input.get(CONF_EXIT_THRESHOLD_M, DEFAULT_EXIT_THRESHOLD_M),
-                    PRESET_OPTIONS[preset] + 200,
-                )
+            if not errors and not _has_coords(self.hass, a):
+                errors[CONF_ENTITY_A] = "invalid_entity"
+            if not errors and not _has_coords(self.hass, b):
+                errors[CONF_ENTITY_B] = "invalid_entity"
 
             entry_th = int(user_input[CONF_ENTRY_THRESHOLD_M])
             exit_th = int(user_input[CONF_EXIT_THRESHOLD_M])
@@ -85,39 +102,28 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors[CONF_EXIT_THRESHOLD_M] = "exit_lt_entry"
 
             if not errors:
-                # unique id: anchor + sorted targets
-                uniq = "__".join([anchor] + sorted(targets))
-                await self.async_set_unique_id(uniq)
+                # unique per pair (order-independent)
+                pair = "__".join(sorted([a, b]))
+                await self.async_set_unique_id(pair)
                 self._abort_if_unique_id_configured()
 
-                title = f"{anchor} ↔ {len(targets)} targets"
-                # store preset only for UX; actual thresholds stored too
+                title = f"{a} ↔ {b}"
                 return self.async_create_entry(title=title, data=user_input)
 
         if candidates:
-            anchor_sel = selector.SelectSelector(
-                selector.SelectSelectorConfig(options=candidates, mode=selector.SelectSelectorMode.DROPDOWN)
+            sel = selector.SelectSelectorConfig(
+                options=candidates, mode=selector.SelectSelectorMode.DROPDOWN
             )
-            targets_sel = selector.SelectSelector(
-                selector.SelectSelectorConfig(options=candidates, multiple=True, mode=selector.SelectSelectorMode.DROPDOWN)
-            )
+            entity_sel_a = selector.SelectSelector(sel)
+            entity_sel_b = selector.SelectSelector(sel)
         else:
-            # fallback (no geocoded sensors found)
-            anchor_sel = selector.EntitySelector()
-            targets_sel = selector.EntitySelector()
-
-        preset_sel = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=list(PRESET_OPTIONS.keys()),
-                mode=selector.SelectSelectorMode.DROPDOWN,
-            )
-        )
+            entity_sel_a = selector.EntitySelector()
+            entity_sel_b = selector.EntitySelector()
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_ANCHOR, default=default_anchor): anchor_sel,
-                vol.Required(CONF_TARGETS, default=default_targets): targets_sel,
-                vol.Optional(CONF_PRESET, default="500"): preset_sel,
+                vol.Required(CONF_ENTITY_A, default=default_a): entity_sel_a,
+                vol.Required(CONF_ENTITY_B, default=default_b): entity_sel_b,
                 vol.Required(CONF_ENTRY_THRESHOLD_M, default=DEFAULT_ENTRY_THRESHOLD_M): vol.All(
                     vol.Coerce(int), vol.Range(min=0, max=1_000_000)
                 ),
@@ -157,13 +163,8 @@ class MemberAdjacencyOptionsFlow(config_entries.OptionsFlow):
             if not errors:
                 return self.async_create_entry(title="", data=user_input)
 
-        preset_sel = selector.SelectSelector(
-            selector.SelectSelectorConfig(options=list(PRESET_OPTIONS.keys()), mode=selector.SelectSelectorMode.DROPDOWN)
-        )
-
         schema = vol.Schema(
             {
-                vol.Optional(CONF_PRESET, default=data.get(CONF_PRESET, "custom")): preset_sel,
                 vol.Optional(CONF_ENTRY_THRESHOLD_M, default=data.get(CONF_ENTRY_THRESHOLD_M, DEFAULT_ENTRY_THRESHOLD_M)): vol.All(
                     vol.Coerce(int), vol.Range(min=0, max=1_000_000)
                 ),
