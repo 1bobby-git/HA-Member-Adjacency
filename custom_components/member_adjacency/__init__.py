@@ -4,12 +4,22 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, PLATFORMS
+from .manager import AdjacencyManager
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    mgr = AdjacencyManager(hass, entry)
+    hass.data.setdefault(DOMAIN, {})[entry.entry_id] = mgr
+    await mgr.async_start()
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        mgr: AdjacencyManager | None = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        if mgr:
+            await mgr.async_stop()
+    return unload_ok

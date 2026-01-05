@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "인접센서",
-        "description": "A-B 한 쌍을 설정합니다. 필요하면 통합을 다시 추가해서 A-C, A-D처럼 여러 쌍을 만들 수 있습니다.",
+        "description": "A-B 한 쌍을 설정합니다. 필요하면 통합을 다시 추가해서 다른 쌍(A-C 등)을 만들 수 있습니다.",
         "data": {
           "entity_a": "엔티티 A",
           "entity_b": "엔티티 B",

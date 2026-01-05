@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.binary_sensor import BinarySensorEntity
+from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
@@ -19,27 +19,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     pair_key = mgr.pair_key
 
     ent_reg.async_get_or_create(
-        "binary_sensor", DOMAIN, f"{entry.entry_id}_proximity",
-        suggested_object_id=f"member_adjacency_{pair_key}_proximity",
+        "button", DOMAIN, f"{entry.entry_id}_refresh",
+        suggested_object_id=f"member_adjacency_{pair_key}_refresh",
         config_entry=entry,
     )
 
-    async_add_entities([MemberAdjacencyProximityBinary(mgr)])
+    async_add_entities([MemberAdjacencyRefreshButton(mgr)])
 
 
-class MemberAdjacencyProximityBinary(BinarySensorEntity):
+class MemberAdjacencyRefreshButton(ButtonEntity):
     _attr_should_poll = False
-    _attr_icon = "mdi:map-marker-circle"
+    _attr_icon = "mdi:refresh"
 
     def __init__(self, mgr: AdjacencyManager) -> None:
         self.mgr = mgr
-        self._attr_unique_id = f"{mgr.entry.entry_id}_proximity"
-        self._attr_name = f"{DEFAULT_NAME_KO} 근접"
+        self._attr_unique_id = f"{mgr.entry.entry_id}_refresh"
+        self._attr_name = f"{DEFAULT_NAME_KO} 새로고침"
         self._unsub = None
 
     async def async_added_to_hass(self) -> None:
         @callback
         def _updated() -> None:
+            # button state는 없지만, device 카드/엔티티 갱신에 도움
             self.async_write_ha_state()
 
         self._unsub = async_dispatcher_connect(self.hass, self.mgr.signal, _updated)
@@ -49,18 +50,5 @@ class MemberAdjacencyProximityBinary(BinarySensorEntity):
     def device_info(self) -> dict[str, Any]:
         return self.mgr.device_info()
 
-    @property
-    def is_on(self) -> bool:
-        return bool(self.mgr.data.proximity)
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        return {
-            "entity_a": self.mgr.entity_a,
-            "entity_b": self.mgr.entity_b,
-            "entry_threshold_m": self.mgr.entry_th,
-            "exit_threshold_m": self.mgr.exit_th,
-            "last_changed": self.mgr.data.last_changed,
-            "last_entered": self.mgr.data.last_entered,
-            "last_left": self.mgr.data.last_left,
-        }
+    async def async_press(self) -> None:
+        await self.mgr.async_force_refresh()

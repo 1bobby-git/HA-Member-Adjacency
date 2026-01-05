@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Adjacency Sensor",
-        "description": "Configure one A-B pair. Add the integration again to create another pair like A-C.",
+        "description": "Configure one A-B pair. Add again to create another pair like A-C.",
         "data": {
           "entity_a": "Entity A",
           "entity_b": "Entity B",

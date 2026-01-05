@@ -102,7 +102,6 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors[CONF_EXIT_THRESHOLD_M] = "exit_lt_entry"
 
             if not errors:
-                # unique per pair (order-independent)
                 pair = "__".join(sorted([a, b]))
                 await self.async_set_unique_id(pair)
                 self._abort_if_unique_id_configured()

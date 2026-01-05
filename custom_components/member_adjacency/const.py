@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 DOMAIN = "member_adjacency"
-PLATFORMS: list[str] = ["sensor", "binary_sensor"]
+PLATFORMS: list[str] = ["sensor", "binary_sensor", "button"]
 
 CONF_ENTITY_A = "entity_a"
 CONF_ENTITY_B = "entity_b"
@@ -33,3 +33,6 @@ BUCKETS = [
 
 EVENT_ENTER = "member_adjacency_enter"
 EVENT_LEAVE = "member_adjacency_leave"
+
+# dispatcher signal prefix
+SIGNAL_UPDATE_PREFIX = "member_adjacency_update"
