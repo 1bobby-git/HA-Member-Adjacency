@@ -4,29 +4,41 @@
     "step": {
       "user": {
         "title": "Adjacency Sensor",
-        "description": "Select two *_geocoded_location sensors and set a threshold (m). If distance is below the threshold, proximity=true.",
+        "description": "Pick one anchor (A) and multiple targets (B) from *_geocoded_location sensors. Hysteresis: enter<=entry, leave>=exit.",
         "data": {
-          "entity_a": "Entity A",
-          "entity_b": "Entity B",
-          "proximity_threshold_m": "Proximity threshold (m)"
+          "anchor_entity": "Anchor sensor (A)",
+          "target_entities": "Target sensors (B)",
+          "threshold_preset": "Threshold preset",
+          "entry_threshold_m": "Entry threshold (m)",
+          "exit_threshold_m": "Exit threshold (m)",
+          "debounce_seconds": "Debounce (seconds)",
+          "max_accuracy_m": "Max accuracy allowed (m, 0=ignore)",
+          "force_meters": "Force meters unit"
         }
       }
     },
     "error": {
-      "invalid_entity": "Selected entity does not expose coordinates (Location or latitude/longitude).",
-      "not_geocoded": "Only *_geocoded_location sensors are allowed."
+      "not_geocoded": "Only *_geocoded_location sensors are allowed.",
+      "targets_contains_anchor": "Targets contain the anchor.",
+      "targets_empty": "Select at least one target.",
+      "exit_lt_entry": "Exit threshold must be >= entry threshold."
     },
     "abort": {
-      "already_configured": "This pair is already configured."
+      "already_configured": "This configuration already exists."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Options",
-        "description": "If distance is below the threshold, proximity=true.",
+        "description": "Change thresholds/accuracy/debounce/unit.",
         "data": {
-          "proximity_threshold_m": "Proximity threshold (m)"
+          "threshold_preset": "Threshold preset",
+          "entry_threshold_m": "Entry threshold (m)",
+          "exit_threshold_m": "Exit threshold (m)",
+          "debounce_seconds": "Debounce (seconds)",
+          "max_accuracy_m": "Max accuracy allowed (m, 0=ignore)",
+          "force_meters": "Force meters unit"
         }
       }
     }

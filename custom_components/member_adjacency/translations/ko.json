@@ -4,29 +4,41 @@
     "step": {
       "user": {
         "title": "인접센서",
-        "description": "mobile_app의 *_geocoded_location 센서 2개를 선택하고, 임계값(m) 이하로 가까우면 proximity=true가 됩니다.",
+        "description": "기준(A) 1개와 대상(B) 여러 개를 선택하여 거리/근접을 계산합니다. 히스테리시스: entry 이하 진입, exit 이상 이탈.",
         "data": {
-          "entity_a": "엔티티 A",
-          "entity_b": "엔티티 B",
-          "proximity_threshold_m": "임계값 (m)"
+          "anchor_entity": "기준(A) 센서",
+          "target_entities": "대상(B) 센서들",
+          "threshold_preset": "임계값 프리셋",
+          "entry_threshold_m": "진입 임계값 (m)",
+          "exit_threshold_m": "이탈 임계값 (m)",
+          "debounce_seconds": "디바운스 (초)",
+          "max_accuracy_m": "최대 허용 정확도 (m, 0=무시)",
+          "force_meters": "단위를 항상 m로 고정"
         }
       }
     },
     "error": {
-      "invalid_entity": "선택한 엔티티에서 좌표를 찾을 수 없습니다. (Location 또는 latitude/longitude 필요)",
-      "not_geocoded": "*_geocoded_location 센서만 선택할 수 있습니다."
+      "not_geocoded": "*_geocoded_location 센서만 선택할 수 있습니다.",
+      "targets_contains_anchor": "대상 목록에 기준(A)이 포함되어 있습니다.",
+      "targets_empty": "대상(B)을 최소 1개 이상 선택하세요.",
+      "exit_lt_entry": "이탈 임계값은 진입 임계값보다 같거나 커야 합니다."
     },
     "abort": {
-      "already_configured": "이 엔티티 쌍은 이미 구성되어 있습니다."
+      "already_configured": "이 구성은 이미 등록되어 있습니다."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "옵션",
-        "description": "임계값(m) 이하로 가까우면 proximity=true 입니다.",
+        "description": "임계값/정확도/디바운스/단위를 변경합니다.",
         "data": {
-          "proximity_threshold_m": "임계값 (m)"
+          "threshold_preset": "임계값 프리셋",
+          "entry_threshold_m": "진입 임계값 (m)",
+          "exit_threshold_m": "이탈 임계값 (m)",
+          "debounce_seconds": "디바운스 (초)",
+          "max_accuracy_m": "최대 허용 정확도 (m, 0=무시)",
+          "force_meters": "단위를 항상 m로 고정"
         }
       }
     }
