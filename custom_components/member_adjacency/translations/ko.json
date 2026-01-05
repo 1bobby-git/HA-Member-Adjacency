@@ -1,0 +1,39 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "인접(거리) 센서",
+        "description": "좌표를 제공하는 엔티티 2개를 선택하세요. (예: mobile_app의 *_geocoded_location, attributes.Location = [위도, 경도])",
+        "data": {
+          "entity_a": "엔티티 A",
+          "entity_b": "엔티티 B",
+          "name": "센서 이름",
+          "icon": "아이콘 (mdi:...)",
+          "rounding": "반올림 자리수(소수점)",
+          "proximity_threshold_m": "근접 임계값 (m)"
+        }
+      }
+    },
+    "error": {
+      "invalid_entity": "선택한 엔티티에서 좌표를 찾을 수 없습니다. (Location 또는 latitude/longitude 필요)"
+    },
+    "abort": {
+      "already_configured": "이 엔티티 쌍은 이미 구성되어 있습니다."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "옵션",
+        "data": {
+          "entity_a": "엔티티 A",
+          "entity_b": "엔티티 B",
+          "name": "센서 이름",
+          "icon": "아이콘 (mdi:...)",
+          "rounding": "반올림 자리수(소수점)",
+          "proximity_threshold_m": "근접 임계값 (m)"
+        }
+      }
+    }
+  }
+}
