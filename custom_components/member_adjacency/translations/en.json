@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Adjacency Sensor",
-        "description": "Configure one A-B pair. Add again to create another pair like A-C.",
+        "description": "Configure one A-B pair (zone is not supported). Add again to create another pair like A-C.",
         "data": {
           "entity_a": "Entity A",
           "entity_b": "Entity B",
@@ -18,9 +18,9 @@
     },
     "error": {
       "invalid_entity": "Selected entity does not expose coordinates (Location or latitude/longitude).",
-      "not_geocoded": "Only *_geocoded_location sensors are allowed.",
       "same_entity": "Entity A and B must be different.",
-      "exit_lt_entry": "Exit threshold must be >= entry threshold."
+      "exit_lt_entry": "Exit threshold must be >= entry threshold.",
+      "zone_not_supported": "Zone entities are not supported."
     },
     "abort": {
       "already_configured": "This pair is already configured."

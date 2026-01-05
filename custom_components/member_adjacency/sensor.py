@@ -13,6 +13,10 @@ from .const import DOMAIN, DEFAULT_NAME_KO
 from .manager import AdjacencyManager
 
 
+def _round1(x: float) -> float:
+    return round(float(x), 1)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
     mgr: AdjacencyManager = hass.data[DOMAIN][entry.entry_id]
 
@@ -29,10 +33,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         suggested_object_id=f"member_adjacency_{pair_key}_bucket",
         config_entry=entry,
     )
+    ent_reg.async_get_or_create(
+        "sensor", DOMAIN, f"{entry.entry_id}_proximity_duration",
+        suggested_object_id=f"member_adjacency_{pair_key}_proximity_duration",
+        config_entry=entry,
+    )
 
     async_add_entities([
         MemberAdjacencyDistanceSensor(mgr),
         MemberAdjacencyBucketSensor(mgr),
+        MemberAdjacencyProximityDurationSensor(mgr),
     ])
 
 
@@ -65,10 +75,16 @@ class _Base(SensorEntity):
             "debounce_seconds": self.mgr.debounce_s,
             "max_accuracy_m": self.mgr.max_acc_m,
             "force_meters": self.mgr.force_meters,
-            "distance_m": None if d is None else int(round(d)),
-            "distance_km": None if d is None else round(d / 1000.0, 3),
+            "data_valid": self.mgr.data.data_valid,
+            "last_valid_updated": self.mgr.data.last_valid_updated,
+            "last_error": self.mgr.data.last_error,
+            "accuracy_a": None if self.mgr.data.accuracy_a is None else _round1(self.mgr.data.accuracy_a),
+            "accuracy_b": None if self.mgr.data.accuracy_b is None else _round1(self.mgr.data.accuracy_b),
+            "distance_m": None if d is None else _round1(d),
+            "distance_km": None if d is None else _round1(d / 1000.0),
             "bucket": self.mgr.data.bucket,
             "proximity": self.mgr.data.proximity,
+            "proximity_duration_min": _round1(self.mgr.proximity_duration_minutes()),
             "last_changed": self.mgr.data.last_changed,
             "last_entered": self.mgr.data.last_entered,
             "last_left": self.mgr.data.last_left,
@@ -95,15 +111,15 @@ class MemberAdjacencyDistanceSensor(_Base):
         return UnitOfLength.METERS
 
     @property
-    def native_value(self) -> int | float | None:
+    def native_value(self) -> float | None:
         d = self.mgr.data.distance_m
         if d is None:
             return None
         if self.mgr.force_meters:
-            return int(round(d))
+            return _round1(d)
         if d >= 1000:
-            return round(d / 1000.0, 2)
-        return int(round(d))
+            return _round1(d / 1000.0)
+        return _round1(d)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -121,6 +137,25 @@ class MemberAdjacencyBucketSensor(_Base):
     @property
     def native_value(self) -> str | None:
         return self.mgr.data.bucket
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._common_attrs()
+
+
+class MemberAdjacencyProximityDurationSensor(_Base):
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:timer-outline"
+    _attr_native_unit_of_measurement = "min"
+
+    def __init__(self, mgr: AdjacencyManager) -> None:
+        super().__init__(mgr)
+        self._attr_unique_id = f"{mgr.entry.entry_id}_proximity_duration"
+        self._attr_name = f"{DEFAULT_NAME_KO} 근접 지속시간"
+
+    @property
+    def native_value(self) -> float:
+        return _round1(self.mgr.proximity_duration_minutes())
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

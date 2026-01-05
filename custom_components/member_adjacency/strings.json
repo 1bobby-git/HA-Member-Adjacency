@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "인접센서",
-        "description": "A-B 한 쌍을 설정합니다. 필요하면 통합을 다시 추가해서 다른 쌍(A-C 등)을 만들 수 있습니다.",
+        "description": "A-B 한 쌍을 설정합니다. (zone은 지원하지 않음) 필요하면 통합을 다시 추가해서 A-C 같은 다른 쌍을 만들 수 있습니다.",
         "data": {
           "entity_a": "엔티티 A",
           "entity_b": "엔티티 B",
@@ -18,9 +18,9 @@
     },
     "error": {
       "invalid_entity": "선택한 엔티티에서 좌표를 찾을 수 없습니다. (Location 또는 latitude/longitude 필요)",
-      "not_geocoded": "*_geocoded_location 센서만 선택할 수 있습니다.",
       "same_entity": "A와 B는 서로 다른 엔티티여야 합니다.",
-      "exit_lt_entry": "이탈 임계값은 진입 임계값보다 같거나 커야 합니다."
+      "exit_lt_entry": "이탈 임계값은 진입 임계값보다 같거나 커야 합니다.",
+      "zone_not_supported": "Zone 엔티티는 지원하지 않습니다."
     },
     "abort": {
       "already_configured": "이 엔티티 쌍은 이미 구성되어 있습니다."

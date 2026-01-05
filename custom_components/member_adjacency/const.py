@@ -34,5 +34,4 @@ BUCKETS = [
 EVENT_ENTER = "member_adjacency_enter"
 EVENT_LEAVE = "member_adjacency_leave"
 
-# dispatcher signal prefix
 SIGNAL_UPDATE_PREFIX = "member_adjacency_update"

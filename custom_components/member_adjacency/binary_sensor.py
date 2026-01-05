@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -12,7 +9,7 @@ from .const import DOMAIN, DEFAULT_NAME_KO
 from .manager import AdjacencyManager
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
+async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> None:
     mgr: AdjacencyManager = hass.data[DOMAIN][entry.entry_id]
 
     ent_reg = er.async_get(hass)
@@ -46,7 +43,7 @@ class MemberAdjacencyProximityBinary(BinarySensorEntity):
         self.async_on_remove(self._unsub)
 
     @property
-    def device_info(self) -> dict[str, Any]:
+    def device_info(self):
         return self.mgr.device_info()
 
     @property
@@ -54,12 +51,15 @@ class MemberAdjacencyProximityBinary(BinarySensorEntity):
         return bool(self.mgr.data.proximity)
 
     @property
-    def extra_state_attributes(self) -> dict[str, Any]:
+    def extra_state_attributes(self):
         return {
             "entity_a": self.mgr.entity_a,
             "entity_b": self.mgr.entity_b,
             "entry_threshold_m": self.mgr.entry_th,
             "exit_threshold_m": self.mgr.exit_th,
+            "data_valid": self.mgr.data.data_valid,
+            "last_valid_updated": self.mgr.data.last_valid_updated,
+            "last_error": self.mgr.data.last_error,
             "last_changed": self.mgr.data.last_changed,
             "last_entered": self.mgr.data.last_entered,
             "last_left": self.mgr.data.last_left,

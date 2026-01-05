@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.event import async_track_state_change_event, async_call_later
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_track_state_change_event, async_call_later
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import device_registry as dr
 from homeassistant.util.location import distance as ha_distance
 from homeassistant.util import dt as dt_util
 
@@ -37,9 +38,20 @@ class AdjacencyData:
     distance_m: float | None = None
     bucket: str | None = None
     proximity: bool = False
+
+    # validity/caching
+    data_valid: bool = False
+    last_valid_updated: str | None = None
+    last_error: str | None = None
+
+    # timestamps for proximity changes
     last_changed: str | None = None
     last_entered: str | None = None
     last_left: str | None = None
+
+    # accuracy info (debugging)
+    accuracy_a: float | None = None
+    accuracy_b: float | None = None
 
 
 def _get(entry: ConfigEntry, key: str, default: Any) -> Any:
@@ -54,6 +66,10 @@ def _obj_id(entity_id: str) -> str:
 
 def _short(entity_id: str) -> str:
     return _obj_id(entity_id).replace("_geocoded_location", "")
+
+
+def _round1(x: float) -> float:
+    return round(float(x), 1)
 
 
 def _try_get_coords_from_state(state) -> tuple[float, float] | None:
@@ -129,6 +145,9 @@ class AdjacencyManager:
         self._unsub = None
         self._cancel_debounce = None
 
+        # proximity duration
+        self._proximity_since = None  # datetime | None
+
     @property
     def pair_key(self) -> str:
         a_id = _short(self.entity_a) if self.entity_a else "a"
@@ -139,8 +158,31 @@ class AdjacencyManager:
     def signal(self) -> str:
         return f"{SIGNAL_UPDATE_PREFIX}_{self.entry.entry_id}"
 
+    def _fallback_name(self, entity_id: str) -> str:
+        # friendly_name → short(entity_id) fallback
+        st = self.hass.states.get(entity_id)
+        if st and (st.attributes or {}).get("friendly_name"):
+            return str(st.attributes["friendly_name"])
+        return _short(entity_id) if entity_id else entity_id
+
+    def _resolve_device_name(self, entity_id: str) -> str:
+        """entity_id가 속한 기기(Device)의 이름을 반환. 없으면 friendly_name/short fallback."""
+        ent_reg = er.async_get(self.hass)
+        dev_reg = dr.async_get(self.hass)
+
+        ent = ent_reg.async_get(entity_id)
+        if ent and ent.device_id:
+            dev = dev_reg.async_get(ent.device_id)
+            if dev:
+                return dev.name_by_user or dev.name or self._fallback_name(entity_id)
+
+        return self._fallback_name(entity_id)
+
     def device_name(self) -> str:
-        return f"인접센서 { _short(self.entity_a) }↔{ _short(self.entity_b) }"
+        # ✅ 스샷1 요구사항: entity_id 문자열이 아니라, 각 엔티티가 속한 '기기 이름'으로 표시
+        a_name = self._resolve_device_name(self.entity_a)
+        b_name = self._resolve_device_name(self.entity_b)
+        return f"{a_name} ↔ {b_name}"
 
     def device_info(self) -> dict[str, Any]:
         return {
@@ -149,6 +191,13 @@ class AdjacencyManager:
             "manufacturer": "1bobby-git",
             "model": "Member Adjacency Distance",
         }
+
+    def proximity_duration_minutes(self) -> float:
+        if not self.data.proximity or self._proximity_since is None:
+            return 0.0
+        now = dt_util.utcnow()
+        delta = now - self._proximity_since
+        return _round1(delta.total_seconds() / 60.0)
 
     async def async_start(self) -> None:
         await self.async_refresh()
@@ -193,18 +242,11 @@ class AdjacencyManager:
             self._cancel_debounce = None
         await self.async_refresh()
 
-    def _coords_if_ok(self, entity_id: str) -> tuple[float, float] | None:
+    def _coords_and_acc(self, entity_id: str) -> tuple[tuple[float, float] | None, float | None]:
         st = self.hass.states.get(entity_id)
         coords = _try_get_coords_from_state(st)
-        if coords is None:
-            return None
-
-        if self.max_acc_m > 0:
-            acc = _get_accuracy_m(st)
-            if acc is not None and acc > float(self.max_acc_m):
-                return None
-
-        return coords
+        acc = _get_accuracy_m(st)
+        return coords, acc
 
     async def async_refresh(self) -> None:
         # refresh options dynamically
@@ -216,56 +258,84 @@ class AdjacencyManager:
 
         prev_prox = self.data.proximity
 
-        a = self._coords_if_ok(self.entity_a)
-        b = self._coords_if_ok(self.entity_b)
+        coords_a, acc_a = self._coords_and_acc(self.entity_a)
+        coords_b, acc_b = self._coords_and_acc(self.entity_b)
+        self.data.accuracy_a = acc_a
+        self.data.accuracy_b = acc_b
 
-        if a is None or b is None:
-            # distance unknown; keep proximity to reduce flapping
-            self.data.distance_m = None
-            self.data.bucket = None
+        # Validate coords (keep last good distance/bucket if invalid)
+        if coords_a is None or coords_b is None:
+            self.data.data_valid = False
+            self.data.last_error = "missing_coords"
             async_dispatcher_send(self.hass, self.signal)
             return
 
-        lat1, lon1 = a
-        lat2, lon2 = b
+        if self.max_acc_m > 0:
+            if acc_a is not None and acc_a > float(self.max_acc_m):
+                self.data.data_valid = False
+                self.data.last_error = "accuracy_filtered_a"
+                async_dispatcher_send(self.hass, self.signal)
+                return
+            if acc_b is not None and acc_b > float(self.max_acc_m):
+                self.data.data_valid = False
+                self.data.last_error = "accuracy_filtered_b"
+                async_dispatcher_send(self.hass, self.signal)
+                return
 
-        meters = float(ha_distance(lat1, lon1, lat2, lon2))  # returns meters
+        lat1, lon1 = coords_a
+        lat2, lon2 = coords_b
+
+        meters_raw = float(ha_distance(lat1, lon1, lat2, lon2))  # meters
+        meters = _round1(meters_raw)
+
+        # Update distance/bucket with valid data
         self.data.distance_m = meters
-        self.data.bucket = _bucket(meters)
+        self.data.bucket = _bucket(meters_raw)
+        self.data.data_valid = True
+        self.data.last_error = None
+        self.data.last_valid_updated = dt_util.utcnow().isoformat()
 
         # hysteresis
         if prev_prox:
-            prox = meters < float(self.exit_th)
+            prox = meters_raw < float(self.exit_th)
         else:
-            prox = meters <= float(self.entry_th)
+            prox = meters_raw <= float(self.entry_th)
 
         if prox != prev_prox:
-            now = dt_util.utcnow().isoformat()
-            self.data.last_changed = now
+            now_iso = dt_util.utcnow().isoformat()
+            self.data.last_changed = now_iso
+
             if prox:
-                self.data.last_entered = now
+                self.data.last_entered = now_iso
+                self._proximity_since = dt_util.utcnow()
                 self.hass.bus.async_fire(
                     EVENT_ENTER,
                     {
                         "entity_a": self.entity_a,
                         "entity_b": self.entity_b,
-                        "distance_m": int(round(meters)),
+                        "distance_m": int(round(meters_raw)),
                         "entry_threshold_m": self.entry_th,
                         "exit_threshold_m": self.exit_th,
                     },
                 )
             else:
-                self.data.last_left = now
+                self.data.last_left = now_iso
+                self._proximity_since = None
                 self.hass.bus.async_fire(
                     EVENT_LEAVE,
                     {
                         "entity_a": self.entity_a,
                         "entity_b": self.entity_b,
-                        "distance_m": int(round(meters)),
+                        "distance_m": int(round(meters_raw)),
                         "entry_threshold_m": self.entry_th,
                         "exit_threshold_m": self.exit_th,
                     },
                 )
+
+        if prox and self._proximity_since is None:
+            self._proximity_since = dt_util.utcnow()
+        if not prox:
+            self._proximity_since = None
 
         self.data.proximity = prox
 
