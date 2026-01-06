@@ -85,6 +85,7 @@ class _Base(SensorEntity):
             "bucket": self.mgr.data.bucket,
             "proximity": self.mgr.data.proximity,
             "proximity_duration_min": _round1(self.mgr.proximity_duration_minutes()),
+            "proximity_duration_human": self.mgr.proximity_duration_human(),
             "last_changed": self.mgr.data.last_changed,
             "last_entered": self.mgr.data.last_entered,
             "last_left": self.mgr.data.last_left,
@@ -115,6 +116,8 @@ class MemberAdjacencyDistanceSensor(_Base):
         d = self.mgr.data.distance_m
         if d is None:
             return None
+
+        # ✅ 표시 정밀도: 소수점 1자리 고정
         if self.mgr.force_meters:
             return _round1(d)
         if d >= 1000:
@@ -144,9 +147,13 @@ class MemberAdjacencyBucketSensor(_Base):
 
 
 class MemberAdjacencyProximityDurationSensor(_Base):
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    """
+    ✅ 사용자 요청: 0.0 min 같은 숫자 대신
+    - "5분"
+    - "1시간 20분"
+    형태로 표시
+    """
     _attr_icon = "mdi:timer-outline"
-    _attr_native_unit_of_measurement = "min"
 
     def __init__(self, mgr: AdjacencyManager) -> None:
         super().__init__(mgr)
@@ -154,8 +161,8 @@ class MemberAdjacencyProximityDurationSensor(_Base):
         self._attr_name = f"{DEFAULT_NAME_KO} 근접 지속시간"
 
     @property
-    def native_value(self) -> float:
-        return _round1(self.mgr.proximity_duration_minutes())
+    def native_value(self) -> str:
+        return self.mgr.proximity_duration_human()
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

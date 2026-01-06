@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -9,6 +11,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_state_change_event, async_call_later
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import device_registry as dr
+from homeassistant.exceptions import ServiceNotFound
 from homeassistant.util.location import distance as ha_distance
 from homeassistant.util import dt as dt_util
 
@@ -124,6 +127,41 @@ def _bucket(distance_m: float) -> str:
     return BUCKETS[-1][1]
 
 
+def _sanitize_service_suffix(s: str) -> str:
+    return (
+        s.strip()
+        .lower()
+        .replace("-", "_")
+        .replace(" ", "_")
+        .replace(".", "_")
+        .replace(":", "_")
+    )
+
+
+def _format_duration_ko(total_seconds: int) -> str:
+    if total_seconds <= 0:
+        return "0분"
+
+    total_minutes = int(round(total_seconds / 60))
+    if total_minutes <= 0:
+        return "0분"
+
+    days = total_minutes // (24 * 60)
+    rem = total_minutes % (24 * 60)
+    hours = rem // 60
+    minutes = rem % 60
+
+    parts: list[str] = []
+    if days > 0:
+        parts.append(f"{days}일")
+    if hours > 0:
+        parts.append(f"{hours}시간")
+    if minutes > 0:
+        parts.append(f"{minutes}분")
+
+    return " ".join(parts) if parts else "0분"
+
+
 class AdjacencyManager:
     """Compute adjacency once and share across entities (sensor/binary_sensor/button)."""
 
@@ -145,8 +183,7 @@ class AdjacencyManager:
         self._unsub = None
         self._cancel_debounce = None
 
-        # proximity duration
-        self._proximity_since = None  # datetime | None
+        self._proximity_since: datetime | None = None
 
     @property
     def pair_key(self) -> str:
@@ -158,15 +195,15 @@ class AdjacencyManager:
     def signal(self) -> str:
         return f"{SIGNAL_UPDATE_PREFIX}_{self.entry.entry_id}"
 
+    # --- naming (device list / config entries display) ---
+
     def _fallback_name(self, entity_id: str) -> str:
-        # friendly_name → short(entity_id) fallback
         st = self.hass.states.get(entity_id)
         if st and (st.attributes or {}).get("friendly_name"):
             return str(st.attributes["friendly_name"])
         return _short(entity_id) if entity_id else entity_id
 
     def _resolve_device_name(self, entity_id: str) -> str:
-        """entity_id가 속한 기기(Device)의 이름을 반환. 없으면 friendly_name/short fallback."""
         ent_reg = er.async_get(self.hass)
         dev_reg = dr.async_get(self.hass)
 
@@ -179,7 +216,6 @@ class AdjacencyManager:
         return self._fallback_name(entity_id)
 
     def device_name(self) -> str:
-        # ✅ 스샷1 요구사항: entity_id 문자열이 아니라, 각 엔티티가 속한 '기기 이름'으로 표시
         a_name = self._resolve_device_name(self.entity_a)
         b_name = self._resolve_device_name(self.entity_b)
         return f"{a_name} ↔ {b_name}"
@@ -192,12 +228,22 @@ class AdjacencyManager:
             "model": "Member Adjacency Distance",
         }
 
-    def proximity_duration_minutes(self) -> float:
+    # --- proximity duration ---
+
+    def proximity_duration_seconds(self) -> int:
         if not self.data.proximity or self._proximity_since is None:
-            return 0.0
+            return 0
         now = dt_util.utcnow()
         delta = now - self._proximity_since
-        return _round1(delta.total_seconds() / 60.0)
+        return max(0, int(delta.total_seconds()))
+
+    def proximity_duration_minutes(self) -> float:
+        return _round1(self.proximity_duration_seconds() / 60.0)
+
+    def proximity_duration_human(self) -> str:
+        return _format_duration_ko(self.proximity_duration_seconds())
+
+    # --- lifecycle ---
 
     async def async_start(self) -> None:
         await self.async_refresh()
@@ -219,7 +265,6 @@ class AdjacencyManager:
             self._cancel_debounce = None
 
     def request_refresh(self) -> None:
-        """Debounced refresh."""
         if self._cancel_debounce:
             self._cancel_debounce()
             self._cancel_debounce = None
@@ -235,12 +280,82 @@ class AdjacencyManager:
 
         self._cancel_debounce = async_call_later(self.hass, self.debounce_s, _later)
 
+    # --- refresh helpers (button) ---
+
+    def _mobile_app_identifier_from_entity(self, entity_id: str) -> str | None:
+        ent_reg = er.async_get(self.hass)
+        dev_reg = dr.async_get(self.hass)
+
+        ent = ent_reg.async_get(entity_id)
+        if not ent or not ent.device_id:
+            return None
+
+        dev = dev_reg.async_get(ent.device_id)
+        if not dev:
+            return None
+
+        for ident in dev.identifiers:
+            try:
+                domain, dev_id = ident
+            except ValueError:
+                continue
+            if domain == "mobile_app":
+                return str(dev_id)
+        return None
+
+    async def async_request_source_update(self, entity_id: str) -> None:
+        """
+        가능한 경우 소스 위치 업데이트를 요청(best-effort).
+        - mobile_app 디바이스: notify.mobile_app_* 로 request_location_update 전송(best-effort)
+        - 그 외: homeassistant.update_entity(best-effort)
+        - zone은 업데이트 요청할 대상이 아니라 skip
+        """
+        if not entity_id or entity_id.startswith("zone."):
+            return
+
+        # 1) mobile_app: notify.mobile_app_<device_id> / request_location_update
+        mobile_id = self._mobile_app_identifier_from_entity(entity_id)
+        if mobile_id:
+            service = f"mobile_app_{_sanitize_service_suffix(mobile_id)}"
+            if self.hass.services.has_service("notify", service):
+                try:
+                    await self.hass.services.async_call(
+                        "notify",
+                        service,
+                        {"message": "request_location_update"},
+                        blocking=True,
+                    )
+                    # 약간의 여유 (즉시 반영되는 경우도 있고 지연될 수도 있음)
+                    await asyncio.sleep(0.3)
+                except Exception:
+                    # 실패해도 아래 update_entity로 fallback
+                    pass
+
+        # 2) generic: update_entity
+        if self.hass.services.has_service("homeassistant", "update_entity"):
+            try:
+                await self.hass.services.async_call(
+                    "homeassistant",
+                    "update_entity",
+                    {"entity_id": entity_id},
+                    blocking=True,
+                )
+            except (ServiceNotFound, Exception):
+                pass
+
+    async def async_force_refresh_with_source_update(self) -> None:
+        # A/B 모두 업데이트 요청 후 재계산
+        await self.async_request_source_update(self.entity_a)
+        await self.async_request_source_update(self.entity_b)
+        await self.async_force_refresh()
+
     async def async_force_refresh(self) -> None:
-        """Immediate refresh (button)."""
         if self._cancel_debounce:
             self._cancel_debounce()
             self._cancel_debounce = None
         await self.async_refresh()
+
+    # --- compute ---
 
     def _coords_and_acc(self, entity_id: str) -> tuple[tuple[float, float] | None, float | None]:
         st = self.hass.states.get(entity_id)
@@ -263,13 +378,14 @@ class AdjacencyManager:
         self.data.accuracy_a = acc_a
         self.data.accuracy_b = acc_b
 
-        # Validate coords (keep last good distance/bucket if invalid)
+        # 좌표가 없으면 마지막 정상값 유지(거리/구간은 유지), 유효성만 false 처리
         if coords_a is None or coords_b is None:
             self.data.data_valid = False
             self.data.last_error = "missing_coords"
             async_dispatcher_send(self.hass, self.signal)
             return
 
+        # accuracy filter
         if self.max_acc_m > 0:
             if acc_a is not None and acc_a > float(self.max_acc_m):
                 self.data.data_valid = False
@@ -286,10 +402,9 @@ class AdjacencyManager:
         lat2, lon2 = coords_b
 
         meters_raw = float(ha_distance(lat1, lon1, lat2, lon2))  # meters
-        meters = _round1(meters_raw)
+        meters_disp = _round1(meters_raw)
 
-        # Update distance/bucket with valid data
-        self.data.distance_m = meters
+        self.data.distance_m = meters_disp
         self.data.bucket = _bucket(meters_raw)
         self.data.data_valid = True
         self.data.last_error = None

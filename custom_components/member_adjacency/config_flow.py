@@ -69,51 +69,78 @@ def _device_name_for_entity(hass: HomeAssistant, entity_id: str) -> str | None:
     return None
 
 
+def _friendly_or_entity(hass: HomeAssistant, entity_id: str) -> str:
+    st = hass.states.get(entity_id)
+    if st and (st.attributes or {}).get("friendly_name"):
+        return str(st.attributes["friendly_name"])
+    return entity_id
+
+
 def _label_for_entity(hass: HomeAssistant, entity_id: str) -> str:
     dev_name = _device_name_for_entity(hass, entity_id)
     if dev_name:
         return f"{dev_name} ({entity_id})"
-
-    st = hass.states.get(entity_id)
-    fn = None if st is None else (st.attributes or {}).get("friendly_name")
-    if fn:
+    fn = _friendly_or_entity(hass, entity_id)
+    if fn != entity_id:
         return f"{fn} ({entity_id})"
-
     return entity_id
 
 
-def _candidate_entities(hass: HomeAssistant) -> list[str]:
-    """
-    셀렉트 박스에 노출할 엔티티 목록:
-    - sensor.*_geocoded_location: coords가 실제로 존재하는 것만 노출
-    - person.*, device_tracker.*, sensor.*: coords가 있는 것만 노출
-    - zone 제외
-    """
-    out: list[str] = []
+def _group_name(entity_id: str) -> str:
+    if entity_id.startswith("sensor.") and entity_id.endswith(GEO_SUFFIX):
+        return "Geocoded"
+    if entity_id.startswith("device_tracker."):
+        return "Device Tracker"
+    if entity_id.startswith("person."):
+        return "Person"
+    if entity_id.startswith("zone."):
+        return "Zone"
+    if entity_id.startswith("sensor."):
+        return "Sensor"
+    return "Other"
 
-    # 1) geocoded sensors (coords 있는 것만)
-    for st in hass.states.async_all("sensor"):
-        if not st.entity_id.endswith(GEO_SUFFIX):
-            continue
-        if st.state in ("unknown", "unavailable"):
-            continue
-        if _try_get_coords_from_state(st) is not None:
-            out.append(st.entity_id)
 
-    # 2) person/device_tracker + other sensors (coords 있는 것만)
-    for domain in ("person", "device_tracker", "sensor"):
+def _group_order(group: str) -> int:
+    order = {
+        "Geocoded": 0,
+        "Device Tracker": 1,
+        "Person": 2,
+        "Zone": 3,
+        "Sensor": 4,
+        "Other": 9,
+    }
+    return order.get(group, 9)
+
+
+def _candidate_entities_grouped(hass: HomeAssistant) -> list[dict[str, str]]:
+    """
+    - 위치(좌표) 추출 가능한 엔티티만 노출
+    - 유형별 정렬 + 유형 내 가나다(라벨) 정렬
+    - options format: [{"value": entity_id, "label": "Geocoded · 1Bobby (sensor.xxx)"}]
+    """
+    entities: list[str] = []
+
+    for domain in ("sensor", "device_tracker", "person", "zone"):
         for st in hass.states.async_all(domain):
-            if st.entity_id.startswith("zone."):
-                continue
-            if st.entity_id in out:
-                continue
             if st.state in ("unknown", "unavailable"):
                 continue
-            if _try_get_coords_from_state(st) is not None:
-                out.append(st.entity_id)
+            if _try_get_coords_from_state(st) is None:
+                continue
+            entities.append(st.entity_id)
 
-    out = sorted(set(out))
-    return out
+    unique = sorted(set(entities))
+
+    rows: list[tuple[int, str, str, str]] = []
+    for eid in unique:
+        g = _group_name(eid)
+        base_label = _label_for_entity(hass, eid)  # used for 가나다 정렬
+        label = f"{g} · {base_label}"
+        rows.append((_group_order(g), base_label, label, eid))
+
+    # (group order, base_label 가나다) 기준 정렬
+    rows.sort(key=lambda x: (x[0], x[1]))
+
+    return [{"value": eid, "label": label} for _, _, label, eid in rows]
 
 
 class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -122,7 +149,9 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         errors: dict[str, str] = {}
 
-        candidates = _candidate_entities(self.hass)
+        options = _candidate_entities_grouped(self.hass)
+        candidates = [o["value"] for o in options]
+
         default_a = candidates[0] if len(candidates) >= 1 else None
         default_b = candidates[1] if len(candidates) >= 2 else None
 
@@ -130,14 +159,11 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             a = user_input[CONF_ENTITY_A]
             b = user_input[CONF_ENTITY_B]
 
-            if a.startswith("zone.") or b.startswith("zone."):
-                errors["base"] = "zone_not_supported"
-
             if a == b:
                 errors[CONF_ENTITY_B] = "same_entity"
 
+            # 안전장치(상태 변화 등으로 coords가 없어질 수 있음)
             if not errors:
-                # 강건성: 혹시나 목록 외 입력/상태 변화로 coords가 없는 경우 방지
                 if _try_get_coords_from_state(self.hass.states.get(a)) is None:
                     errors[CONF_ENTITY_A] = "invalid_entity"
                 if _try_get_coords_from_state(self.hass.states.get(b)) is None:
@@ -153,15 +179,11 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(pair)
                 self._abort_if_unique_id_configured()
 
-                # ✅ 스샷1 요구사항: 구성요소 항목 제목을 device name 기반으로
-                a_name = _device_name_for_entity(self.hass, a) or _label_for_entity(self.hass, a)
-                b_name = _device_name_for_entity(self.hass, b) or _label_for_entity(self.hass, b)
-                title = f"{a_name.split(' (', 1)[0]} ↔ {b_name.split(' (', 1)[0]}"
+                a_name = _device_name_for_entity(self.hass, a) or _friendly_or_entity(self.hass, a)
+                b_name = _device_name_for_entity(self.hass, b) or _friendly_or_entity(self.hass, b)
+                title = f"{a_name} ↔ {b_name}"
 
                 return self.async_create_entry(title=title, data=user_input)
-
-        # selector options with labels (value=entity_id, label="Device (entity_id)")
-        options = [{"value": eid, "label": _label_for_entity(self.hass, eid)} for eid in candidates]
 
         if options:
             sel = selector.SelectSelectorConfig(
@@ -171,13 +193,8 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             entity_sel_a = selector.SelectSelector(sel)
             entity_sel_b = selector.SelectSelector(sel)
         else:
-            # fallback - still excludes zone by domains
-            entity_sel_a = selector.EntitySelector(
-                selector.EntitySelectorConfig(include_domains=["sensor", "person", "device_tracker"])
-            )
-            entity_sel_b = selector.EntitySelector(
-                selector.EntitySelectorConfig(include_domains=["sensor", "person", "device_tracker"])
-            )
+            entity_sel_a = selector.EntitySelector()
+            entity_sel_b = selector.EntitySelector()
 
         schema = vol.Schema(
             {

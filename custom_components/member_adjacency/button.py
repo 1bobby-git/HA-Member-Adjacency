@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.helpers import entity_registry as er
-from homeassistant.exceptions import ServiceNotFound
 
 from .const import DOMAIN, DEFAULT_NAME_KO
 from .manager import AdjacencyManager
@@ -37,18 +36,4 @@ class MemberAdjacencyRefreshButton(ButtonEntity):
         return self.mgr.device_info()
 
     async def async_press(self) -> None:
-        # 1) best-effort: ask HA to update entities first
-        try:
-            await self.hass.services.async_call(
-                "homeassistant",
-                "update_entity",
-                {"entity_id": [self.mgr.entity_a, self.mgr.entity_b]},
-                blocking=True,
-            )
-        except ServiceNotFound:
-            pass
-        except Exception:
-            pass
-
-        # 2) recompute immediately
-        await self.mgr.async_force_refresh()
+        await self.mgr.async_force_refresh_with_source_update()
