@@ -8,11 +8,11 @@
         "data": {
           "entity_a": "Entity A",
           "entity_b": "Entity B",
-          "entry_threshold_m": "Entry threshold (m)",
-          "exit_threshold_m": "Exit threshold (m)",
-          "debounce_seconds": "Debounce (seconds)",
-          "max_accuracy_m": "Max accuracy allowed (m, 0=ignore)",
-          "force_meters": "Force meters unit"
+          "entry_threshold_m": "Entry threshold (m) (<= : proximity ON)",
+          "exit_threshold_m": "Exit threshold (m) (>= : proximity OFF)",
+          "debounce_seconds": "Debounce (seconds) (0=immediate)",
+          "max_accuracy_m": "Max accuracy allowed (m) (0=ignore)",
+          "force_meters": "Force display to meters (stored unit is always meters)"
         }
       }
     },
@@ -29,13 +29,13 @@
     "step": {
       "init": {
         "title": "Options",
-        "description": "Change thresholds/accuracy/debounce/unit.",
+        "description": "Change thresholds/accuracy/debounce/force display unit.",
         "data": {
-          "entry_threshold_m": "Entry threshold (m)",
-          "exit_threshold_m": "Exit threshold (m)",
-          "debounce_seconds": "Debounce (seconds)",
-          "max_accuracy_m": "Max accuracy allowed (m, 0=ignore)",
-          "force_meters": "Force meters unit"
+          "entry_threshold_m": "Entry threshold (m) (<= : proximity ON)",
+          "exit_threshold_m": "Exit threshold (m) (>= : proximity OFF)",
+          "debounce_seconds": "Debounce (seconds) (0=immediate)",
+          "max_accuracy_m": "Max accuracy allowed (m) (0=ignore)",
+          "force_meters": "Force display to meters (stored unit is always meters)"
         }
       }
     }

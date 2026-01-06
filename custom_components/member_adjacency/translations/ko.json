@@ -4,15 +4,15 @@
     "step": {
       "user": {
         "title": "인접센서",
-        "description": "A-B 한 쌍만 설정합니다. 필요하면 통합을 다시 추가해서 A-C 같은 다른 쌍을 만들 수 있습니다.",
+        "description": "A-B 한 쌍을 설정합니다. 통합을 다시 추가해서 A-C 같은 다른 쌍도 만들 수 있습니다.",
         "data": {
           "entity_a": "엔티티 A",
           "entity_b": "엔티티 B",
-          "entry_threshold_m": "진입 임계값 (m)",
-          "exit_threshold_m": "이탈 임계값 (m)",
-          "debounce_seconds": "디바운스 (초)",
-          "max_accuracy_m": "최대 허용 정확도 (m, 0=무시)",
-          "force_meters": "단위를 항상 m로 고정"
+          "entry_threshold_m": "진입 임계값 (m) (이하: 근접 ON)",
+          "exit_threshold_m": "이탈 임계값 (m) (이상: 근접 OFF)",
+          "debounce_seconds": "디바운스 (초) (0=즉시)",
+          "max_accuracy_m": "최대 허용 정확도 (m) (0=무시)",
+          "force_meters": "표시 단위를 항상 m로 고정 (저장은 항상 m)"
         }
       }
     },
@@ -29,13 +29,13 @@
     "step": {
       "init": {
         "title": "옵션",
-        "description": "임계값/정확도/디바운스/단위 고정을 변경합니다.",
+        "description": "임계값/정확도/디바운스/표시 단위 고정을 변경합니다.",
         "data": {
-          "entry_threshold_m": "진입 임계값 (m)",
-          "exit_threshold_m": "이탈 임계값 (m)",
-          "debounce_seconds": "디바운스 (초)",
-          "max_accuracy_m": "최대 허용 정확도 (m, 0=무시)",
-          "force_meters": "단위를 항상 m로 고정"
+          "entry_threshold_m": "진입 임계값 (m) (이하: 근접 ON)",
+          "exit_threshold_m": "이탈 임계값 (m) (이상: 근접 OFF)",
+          "debounce_seconds": "디바운스 (초) (0=즉시)",
+          "max_accuracy_m": "최대 허용 정확도 (m) (0=무시)",
+          "force_meters": "표시 단위를 항상 m로 고정 (저장은 항상 m)"
         }
       }
     }

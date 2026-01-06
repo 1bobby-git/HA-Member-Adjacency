@@ -24,26 +24,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     pair_key = mgr.pair_key
 
     ent_reg.async_get_or_create(
-        "sensor", DOMAIN, f"{entry.entry_id}_distance",
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}_distance",
         suggested_object_id=f"member_adjacency_{pair_key}",
         config_entry=entry,
     )
     ent_reg.async_get_or_create(
-        "sensor", DOMAIN, f"{entry.entry_id}_bucket",
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}_bucket",
         suggested_object_id=f"member_adjacency_{pair_key}_bucket",
         config_entry=entry,
     )
     ent_reg.async_get_or_create(
-        "sensor", DOMAIN, f"{entry.entry_id}_proximity_duration",
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}_proximity_duration",
         suggested_object_id=f"member_adjacency_{pair_key}_proximity_duration",
         config_entry=entry,
     )
 
-    async_add_entities([
-        MemberAdjacencyDistanceSensor(mgr),
-        MemberAdjacencyBucketSensor(mgr),
-        MemberAdjacencyProximityDurationSensor(mgr),
-    ])
+    async_add_entities(
+        [
+            MemberAdjacencyDistanceSensor(mgr),
+            MemberAdjacencyBucketSensor(mgr),
+            MemberAdjacencyProximityDurationSensor(mgr),
+        ]
+    )
 
 
 class _Base(SensorEntity):
@@ -65,8 +73,32 @@ class _Base(SensorEntity):
     def device_info(self) -> dict[str, Any]:
         return self.mgr.device_info()
 
+    def _display(self, meters: float) -> tuple[float, str, str]:
+        """
+        표시용 값/단위/텍스트.
+        - force_meters=True => 항상 m
+        - 아니면 1000m 이상이면 km 표시
+        """
+        if self.mgr.force_meters or meters < 1000:
+            v = _round1(meters)
+            u = "m"
+            return v, u, f"{v} m"
+
+        v = _round1(meters / 1000.0)
+        u = "km"
+        return v, u, f"{v} km"
+
     def _common_attrs(self) -> dict[str, Any]:
-        d = self.mgr.data.distance_m
+        d_m = self.mgr.data.distance_m
+        display_value = None
+        display_unit = None
+        display_text = None
+        if d_m is not None:
+            dv, du, dt = self._display(d_m)
+            display_value = dv
+            display_unit = du
+            display_text = dt
+
         return {
             "entity_a": self.mgr.entity_a,
             "entity_b": self.mgr.entity_b,
@@ -80,8 +112,16 @@ class _Base(SensorEntity):
             "last_error": self.mgr.data.last_error,
             "accuracy_a": None if self.mgr.data.accuracy_a is None else _round1(self.mgr.data.accuracy_a),
             "accuracy_b": None if self.mgr.data.accuracy_b is None else _round1(self.mgr.data.accuracy_b),
-            "distance_m": None if d is None else _round1(d),
-            "distance_km": None if d is None else _round1(d / 1000.0),
+
+            # ✅ 저장/통계용(항상 meters)
+            "distance_m": None if d_m is None else _round1(d_m),
+            "distance_km": None if d_m is None else _round1(d_m / 1000.0),
+
+            # ✅ 표시용(자동 m/km 전환)
+            "display_value": display_value,
+            "display_unit": display_unit,
+            "display_text": display_text,
+
             "bucket": self.mgr.data.bucket,
             "proximity": self.mgr.data.proximity,
             "proximity_duration_min": _round1(self.mgr.proximity_duration_minutes()),
@@ -104,24 +144,15 @@ class MemberAdjacencyDistanceSensor(_Base):
 
     @property
     def native_unit_of_measurement(self) -> str | None:
-        if self.mgr.force_meters:
-            return UnitOfLength.METERS
-        d = self.mgr.data.distance_m
-        if d is not None and d >= 1000:
-            return UnitOfLength.KILOMETERS
+        # ✅ 항상 meters로 고정 (통계 안정화)
         return UnitOfLength.METERS
 
     @property
     def native_value(self) -> float | None:
+        # ✅ 항상 meters로 저장 (표시는 attributes에서)
         d = self.mgr.data.distance_m
         if d is None:
             return None
-
-        # ✅ 표시 정밀도: 소수점 1자리 고정
-        if self.mgr.force_meters:
-            return _round1(d)
-        if d >= 1000:
-            return _round1(d / 1000.0)
         return _round1(d)
 
     @property
@@ -147,12 +178,6 @@ class MemberAdjacencyBucketSensor(_Base):
 
 
 class MemberAdjacencyProximityDurationSensor(_Base):
-    """
-    ✅ 사용자 요청: 0.0 min 같은 숫자 대신
-    - "5분"
-    - "1시간 20분"
-    형태로 표시
-    """
     _attr_icon = "mdi:timer-outline"
 
     def __init__(self, mgr: AdjacencyManager) -> None:

@@ -7,14 +7,13 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.event import async_track_state_change_event, async_call_later
-from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers import device_registry as dr
 from homeassistant.exceptions import ServiceNotFound
-from homeassistant.util.location import distance as ha_distance
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
-
+from homeassistant.util.location import distance as ha_distance  # ✅ HA Core distance (meters)
 from .const import (
     BUCKETS,
     CONF_DEBOUNCE_SECONDS,
@@ -38,21 +37,19 @@ from .const import (
 
 @dataclass
 class AdjacencyData:
+    # ✅ raw meters (NOT rounded, NOT scaled)
     distance_m: float | None = None
     bucket: str | None = None
     proximity: bool = False
 
-    # validity/caching
     data_valid: bool = False
     last_valid_updated: str | None = None
     last_error: str | None = None
 
-    # timestamps for proximity changes
     last_changed: str | None = None
     last_entered: str | None = None
     last_left: str | None = None
 
-    # accuracy info (debugging)
     accuracy_a: float | None = None
     accuracy_b: float | None = None
 
@@ -81,6 +78,7 @@ def _try_get_coords_from_state(state) -> tuple[float, float] | None:
 
     attrs = state.attributes or {}
 
+    # mobile_app geocoded sensor
     loc = attrs.get("Location")
     if isinstance(loc, (list, tuple)) and len(loc) == 2:
         try:
@@ -88,12 +86,14 @@ def _try_get_coords_from_state(state) -> tuple[float, float] | None:
         except (TypeError, ValueError):
             return None
 
+    # general entities
     if "latitude" in attrs and "longitude" in attrs:
         try:
             return (float(attrs["latitude"]), float(attrs["longitude"]))
         except (TypeError, ValueError):
             return None
 
+    # string state "lat,lon"
     if isinstance(state.state, str) and "," in state.state:
         parts = [p.strip() for p in state.state.split(",")]
         if len(parts) == 2:
@@ -141,7 +141,6 @@ def _sanitize_service_suffix(s: str) -> str:
 def _format_duration_ko(total_seconds: int) -> str:
     if total_seconds <= 0:
         return "0분"
-
     total_minutes = int(round(total_seconds / 60))
     if total_minutes <= 0:
         return "0분"
@@ -152,13 +151,12 @@ def _format_duration_ko(total_seconds: int) -> str:
     minutes = rem % 60
 
     parts: list[str] = []
-    if days > 0:
+    if days:
         parts.append(f"{days}일")
-    if hours > 0:
+    if hours:
         parts.append(f"{hours}시간")
-    if minutes > 0:
+    if minutes:
         parts.append(f"{minutes}분")
-
     return " ".join(parts) if parts else "0분"
 
 
@@ -182,7 +180,6 @@ class AdjacencyManager:
 
         self._unsub = None
         self._cancel_debounce = None
-
         self._proximity_since: datetime | None = None
 
     @property
@@ -195,8 +192,7 @@ class AdjacencyManager:
     def signal(self) -> str:
         return f"{SIGNAL_UPDATE_PREFIX}_{self.entry.entry_id}"
 
-    # --- naming (device list / config entries display) ---
-
+    # --- device naming ---
     def _fallback_name(self, entity_id: str) -> str:
         st = self.hass.states.get(entity_id)
         if st and (st.attributes or {}).get("friendly_name"):
@@ -212,13 +208,10 @@ class AdjacencyManager:
             dev = dev_reg.async_get(ent.device_id)
             if dev:
                 return dev.name_by_user or dev.name or self._fallback_name(entity_id)
-
         return self._fallback_name(entity_id)
 
     def device_name(self) -> str:
-        a_name = self._resolve_device_name(self.entity_a)
-        b_name = self._resolve_device_name(self.entity_b)
-        return f"{a_name} ↔ {b_name}"
+        return f"{self._resolve_device_name(self.entity_a)} ↔ {self._resolve_device_name(self.entity_b)}"
 
     def device_info(self) -> dict[str, Any]:
         return {
@@ -229,12 +222,10 @@ class AdjacencyManager:
         }
 
     # --- proximity duration ---
-
     def proximity_duration_seconds(self) -> int:
         if not self.data.proximity or self._proximity_since is None:
             return 0
-        now = dt_util.utcnow()
-        delta = now - self._proximity_since
+        delta = dt_util.utcnow() - self._proximity_since
         return max(0, int(delta.total_seconds()))
 
     def proximity_duration_minutes(self) -> float:
@@ -244,7 +235,6 @@ class AdjacencyManager:
         return _format_duration_ko(self.proximity_duration_seconds())
 
     # --- lifecycle ---
-
     async def async_start(self) -> None:
         await self.async_refresh()
 
@@ -280,8 +270,7 @@ class AdjacencyManager:
 
         self._cancel_debounce = async_call_later(self.hass, self.debounce_s, _later)
 
-    # --- refresh helpers (button) ---
-
+    # --- refresh button: try source update then refresh ---
     def _mobile_app_identifier_from_entity(self, entity_id: str) -> str | None:
         ent_reg = er.async_get(self.hass)
         dev_reg = dr.async_get(self.hass)
@@ -304,16 +293,9 @@ class AdjacencyManager:
         return None
 
     async def async_request_source_update(self, entity_id: str) -> None:
-        """
-        가능한 경우 소스 위치 업데이트를 요청(best-effort).
-        - mobile_app 디바이스: notify.mobile_app_* 로 request_location_update 전송(best-effort)
-        - 그 외: homeassistant.update_entity(best-effort)
-        - zone은 업데이트 요청할 대상이 아니라 skip
-        """
         if not entity_id or entity_id.startswith("zone."):
             return
 
-        # 1) mobile_app: notify.mobile_app_<device_id> / request_location_update
         mobile_id = self._mobile_app_identifier_from_entity(entity_id)
         if mobile_id:
             service = f"mobile_app_{_sanitize_service_suffix(mobile_id)}"
@@ -325,13 +307,10 @@ class AdjacencyManager:
                         {"message": "request_location_update"},
                         blocking=True,
                     )
-                    # 약간의 여유 (즉시 반영되는 경우도 있고 지연될 수도 있음)
                     await asyncio.sleep(0.3)
                 except Exception:
-                    # 실패해도 아래 update_entity로 fallback
                     pass
 
-        # 2) generic: update_entity
         if self.hass.services.has_service("homeassistant", "update_entity"):
             try:
                 await self.hass.services.async_call(
@@ -344,7 +323,6 @@ class AdjacencyManager:
                 pass
 
     async def async_force_refresh_with_source_update(self) -> None:
-        # A/B 모두 업데이트 요청 후 재계산
         await self.async_request_source_update(self.entity_a)
         await self.async_request_source_update(self.entity_b)
         await self.async_force_refresh()
@@ -356,15 +334,12 @@ class AdjacencyManager:
         await self.async_refresh()
 
     # --- compute ---
-
     def _coords_and_acc(self, entity_id: str) -> tuple[tuple[float, float] | None, float | None]:
         st = self.hass.states.get(entity_id)
-        coords = _try_get_coords_from_state(st)
-        acc = _get_accuracy_m(st)
-        return coords, acc
+        return _try_get_coords_from_state(st), _get_accuracy_m(st)
 
     async def async_refresh(self) -> None:
-        # refresh options dynamically
+        # dynamic options
         self.entry_th = int(_get(self.entry, CONF_ENTRY_THRESHOLD_M, DEFAULT_ENTRY_THRESHOLD_M))
         self.exit_th = int(_get(self.entry, CONF_EXIT_THRESHOLD_M, DEFAULT_EXIT_THRESHOLD_M))
         self.debounce_s = int(_get(self.entry, CONF_DEBOUNCE_SECONDS, DEFAULT_DEBOUNCE_SECONDS))
@@ -378,7 +353,7 @@ class AdjacencyManager:
         self.data.accuracy_a = acc_a
         self.data.accuracy_b = acc_b
 
-        # 좌표가 없으면 마지막 정상값 유지(거리/구간은 유지), 유효성만 false 처리
+        # invalid coords => keep last good, mark invalid
         if coords_a is None or coords_b is None:
             self.data.data_valid = False
             self.data.last_error = "missing_coords"
@@ -401,16 +376,16 @@ class AdjacencyManager:
         lat1, lon1 = coords_a
         lat2, lon2 = coords_b
 
-        meters_raw = float(ha_distance(lat1, lon1, lat2, lon2))  # meters
-        meters_disp = _round1(meters_raw)
+        # ✅ 핵심: HA Core distance()는 "meters" 반환
+        meters_raw = float(ha_distance(lat1, lon1, lat2, lon2))
 
-        self.data.distance_m = meters_disp
+        self.data.distance_m = meters_raw
         self.data.bucket = _bucket(meters_raw)
         self.data.data_valid = True
         self.data.last_error = None
         self.data.last_valid_updated = dt_util.utcnow().isoformat()
 
-        # hysteresis
+        # hysteresis uses raw meters
         if prev_prox:
             prox = meters_raw < float(self.exit_th)
         else:
@@ -453,5 +428,4 @@ class AdjacencyManager:
             self._proximity_since = None
 
         self.data.proximity = prox
-
         async_dispatcher_send(self.hass, self.signal)

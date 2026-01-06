@@ -133,14 +133,36 @@ def _candidate_entities_grouped(hass: HomeAssistant) -> list[dict[str, str]]:
     rows: list[tuple[int, str, str, str]] = []
     for eid in unique:
         g = _group_name(eid)
-        base_label = _label_for_entity(hass, eid)  # used for 가나다 정렬
+        base_label = _label_for_entity(hass, eid)  # 가나다 정렬 키
         label = f"{g} · {base_label}"
         rows.append((_group_order(g), base_label, label, eid))
 
-    # (group order, base_label 가나다) 기준 정렬
     rows.sort(key=lambda x: (x[0], x[1]))
-
     return [{"value": eid, "label": label} for _, _, label, eid in rows]
+
+
+def _num_box(min_v: int, max_v: int, step: int, unit: str | None = None) -> selector.NumberSelector:
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=min_v,
+            max=max_v,
+            step=step,
+            mode=selector.NumberSelectorMode.BOX,
+            unit_of_measurement=unit,
+        )
+    )
+
+
+def _num_slider(min_v: int, max_v: int, step: int, unit: str | None = None) -> selector.NumberSelector:
+    return selector.NumberSelector(
+        selector.NumberSelectorConfig(
+            min=min_v,
+            max=max_v,
+            step=step,
+            mode=selector.NumberSelectorMode.SLIDER,
+            unit_of_measurement=unit,
+        )
+    )
 
 
 class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -162,7 +184,6 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if a == b:
                 errors[CONF_ENTITY_B] = "same_entity"
 
-            # 안전장치(상태 변화 등으로 coords가 없어질 수 있음)
             if not errors:
                 if _try_get_coords_from_state(self.hass.states.get(a)) is None:
                     errors[CONF_ENTITY_A] = "invalid_entity"
@@ -185,34 +206,30 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 return self.async_create_entry(title=title, data=user_input)
 
-        if options:
-            sel = selector.SelectSelectorConfig(
+        entity_sel = selector.SelectSelector(
+            selector.SelectSelectorConfig(
                 options=options,
                 mode=selector.SelectSelectorMode.DROPDOWN,
             )
-            entity_sel_a = selector.SelectSelector(sel)
-            entity_sel_b = selector.SelectSelector(sel)
-        else:
-            entity_sel_a = selector.EntitySelector()
-            entity_sel_b = selector.EntitySelector()
+        )
 
         schema = vol.Schema(
             {
-                vol.Required(CONF_ENTITY_A, default=default_a): entity_sel_a,
-                vol.Required(CONF_ENTITY_B, default=default_b): entity_sel_b,
-                vol.Required(CONF_ENTRY_THRESHOLD_M, default=DEFAULT_ENTRY_THRESHOLD_M): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=1_000_000)
+                vol.Required(CONF_ENTITY_A, default=default_a): entity_sel,
+                vol.Required(CONF_ENTITY_B, default=default_b): entity_sel,
+                vol.Required(CONF_ENTRY_THRESHOLD_M, default=DEFAULT_ENTRY_THRESHOLD_M): _num_box(
+                    0, 1_000_000, 10, "m"
                 ),
-                vol.Required(CONF_EXIT_THRESHOLD_M, default=DEFAULT_EXIT_THRESHOLD_M): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=1_000_000)
+                vol.Required(CONF_EXIT_THRESHOLD_M, default=DEFAULT_EXIT_THRESHOLD_M): _num_box(
+                    0, 1_000_000, 10, "m"
                 ),
-                vol.Optional(CONF_DEBOUNCE_SECONDS, default=DEFAULT_DEBOUNCE_SECONDS): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=60)
+                vol.Required(CONF_DEBOUNCE_SECONDS, default=DEFAULT_DEBOUNCE_SECONDS): _num_slider(
+                    0, 60, 1, "s"
                 ),
-                vol.Optional(CONF_MAX_ACCURACY_M, default=DEFAULT_MAX_ACCURACY_M): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=10_000)
+                vol.Required(CONF_MAX_ACCURACY_M, default=DEFAULT_MAX_ACCURACY_M): _num_box(
+                    0, 10_000, 10, "m"
                 ),
-                vol.Optional(CONF_FORCE_METERS, default=DEFAULT_FORCE_METERS): bool,
+                vol.Required(CONF_FORCE_METERS, default=DEFAULT_FORCE_METERS): selector.BooleanSelector(),
             }
         )
 
@@ -239,21 +256,24 @@ class MemberAdjacencyOptionsFlow(config_entries.OptionsFlow):
             if not errors:
                 return self.async_create_entry(title="", data=user_input)
 
+        # ✅ Options 화면 레이아웃 개선 포인트:
+        # - vol.Optional -> vol.Required 로 변경해서 체크박스가 뜨지 않게 함
+        # - debounce는 slider로 통일 (0이면 즉시)
         schema = vol.Schema(
             {
-                vol.Optional(CONF_ENTRY_THRESHOLD_M, default=data.get(CONF_ENTRY_THRESHOLD_M, DEFAULT_ENTRY_THRESHOLD_M)): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=1_000_000)
+                vol.Required(CONF_ENTRY_THRESHOLD_M, default=data.get(CONF_ENTRY_THRESHOLD_M, DEFAULT_ENTRY_THRESHOLD_M)): _num_box(
+                    0, 1_000_000, 10, "m"
                 ),
-                vol.Optional(CONF_EXIT_THRESHOLD_M, default=data.get(CONF_EXIT_THRESHOLD_M, DEFAULT_EXIT_THRESHOLD_M)): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=1_000_000)
+                vol.Required(CONF_EXIT_THRESHOLD_M, default=data.get(CONF_EXIT_THRESHOLD_M, DEFAULT_EXIT_THRESHOLD_M)): _num_box(
+                    0, 1_000_000, 10, "m"
                 ),
-                vol.Optional(CONF_DEBOUNCE_SECONDS, default=data.get(CONF_DEBOUNCE_SECONDS, DEFAULT_DEBOUNCE_SECONDS)): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=60)
+                vol.Required(CONF_DEBOUNCE_SECONDS, default=data.get(CONF_DEBOUNCE_SECONDS, DEFAULT_DEBOUNCE_SECONDS)): _num_slider(
+                    0, 60, 1, "s"
                 ),
-                vol.Optional(CONF_MAX_ACCURACY_M, default=data.get(CONF_MAX_ACCURACY_M, DEFAULT_MAX_ACCURACY_M)): vol.All(
-                    vol.Coerce(int), vol.Range(min=0, max=10_000)
+                vol.Required(CONF_MAX_ACCURACY_M, default=data.get(CONF_MAX_ACCURACY_M, DEFAULT_MAX_ACCURACY_M)): _num_box(
+                    0, 10_000, 10, "m"
                 ),
-                vol.Optional(CONF_FORCE_METERS, default=data.get(CONF_FORCE_METERS, DEFAULT_FORCE_METERS)): bool,
+                vol.Required(CONF_FORCE_METERS, default=data.get(CONF_FORCE_METERS, DEFAULT_FORCE_METERS)): selector.BooleanSelector(),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)
