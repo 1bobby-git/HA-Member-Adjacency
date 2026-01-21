@@ -1,0 +1,167 @@
+alias: "Member Adjacency: near 1회 알림 + 멀어지면 해제"
+description: "bucket이 near/very_near로 진입하면 조건 만족 시 1회만 지도 알림을 보냅니다(잠금). 다시 멀어지면 잠금을 해제합니다. 한 명만 집이면 집에 있는 사람에게만, 둘 다 집이 아니면 서로에게 알립니다."
+mode: single
+triggers:
+  - trigger: state
+    entity_id: sensor.member_adjacency_<PAIR_ID>_bucket
+    to: near
+    id: enter_near
+  - trigger: state
+    entity_id: sensor.member_adjacency_<PAIR_ID>_bucket
+    to: very_near
+    id: enter_near
+  - trigger: state
+    entity_id: sensor.member_adjacency_<PAIR_ID>_bucket
+    from:
+      - near
+      - very_near
+    to:
+      - mid
+      - far
+      - very_far
+      - unknown
+      - unavailable
+    id: exit_near
+conditions: []
+actions:
+  - alias: "접근/이탈 라우팅"
+    choose:
+      - alias: "접근(near/very_near) 시 1회 알림"
+        conditions:
+          - condition: trigger
+            id: enter_near
+          - condition: state
+            entity_id: input_boolean.adjacency_notify_lock
+            state: "off"
+          - condition: state
+            entity_id: binary_sensor.member_adjacency_<PAIR_ID>_proximity
+            state: "on"
+        sequence:
+          - alias: "알림 대상 결정"
+            choose:
+              - alias: "A가 집이고 B는 집이 아님 -> A에게 알림"
+                conditions:
+                  - condition: state
+                    entity_id: device_tracker.member_a
+                    state: "home"
+                  - condition: not
+                    conditions:
+                      - condition: state
+                        entity_id: device_tracker.member_b
+                        state: "home"
+                  - condition: state
+                    entity_id: input_boolean.member_a_door_lock
+                    state: "off"
+                sequence:
+                  - alias: "A에게 알림"
+                    action: notify.mobile_app_member_a
+                    data:
+                      title: "인접 알림"
+                      message: >
+                        {% set d = states('sensor.member_adjacency_<PAIR_ID>') | float(0) %}
+                        {% set u = state_attr('sensor.member_adjacency_<PAIR_ID>','unit_of_measurement') or '' %}
+                        B와의 거리는 {{ "{0:,.0f}".format(d) }}{{ u }} 입니다
+                      data:
+                        push:
+                          category: map
+                        action_data:
+                          latitude: "{{ state_attr('person.member_b','latitude') }}"
+                          longitude: "{{ state_attr('person.member_b','longitude') }}"
+                          latitude_delta: 0.005
+                          longitude_delta: 0.005
+                          shows_user_location: true
+                  - alias: "알림 잠금 ON(재알림 방지)"
+                    action: input_boolean.turn_on
+                    target:
+                      entity_id: input_boolean.adjacency_notify_lock
+
+              - alias: "B가 집이고 A는 집이 아님 -> B에게 알림"
+                conditions:
+                  - condition: state
+                    entity_id: device_tracker.member_b
+                    state: "home"
+                  - condition: not
+                    conditions:
+                      - condition: state
+                        entity_id: device_tracker.member_a
+                        state: "home"
+                  - condition: state
+                    entity_id: input_boolean.member_b_door_lock
+                    state: "off"
+                sequence:
+                  - alias: "B에게 알림"
+                    action: notify.mobile_app_member_b
+                    data:
+                      title: "인접 알림"
+                      message: >
+                        {% set d = states('sensor.member_adjacency_<PAIR_ID>') | float(0) %}
+                        {% set u = state_attr('sensor.member_adjacency_<PAIR_ID>','unit_of_measurement') or '' %}
+                        A와의 거리는 {{ "{0:,.0f}".format(d) }}{{ u }} 입니다
+                      data:
+                        push:
+                          category: map
+                        action_data:
+                          latitude: "{{ state_attr('person.member_a','latitude') }}"
+                          longitude: "{{ state_attr('person.member_a','longitude') }}"
+                          latitude_delta: 0.005
+                          longitude_delta: 0.005
+                          shows_user_location: true
+                  - alias: "알림 잠금 ON(재알림 방지)"
+                    action: input_boolean.turn_on
+                    target:
+                      entity_id: input_boolean.adjacency_notify_lock
+
+              - alias: "둘 다 집이 아님 -> 서로에게 알림"
+                conditions:
+                  - condition: template
+                    value_template: >
+                      {{ states('device_tracker.member_a') != 'home' and states('device_tracker.member_b') != 'home' }}
+                sequence:
+                  - alias: "A에게 알림"
+                    action: notify.mobile_app_member_a
+                    data:
+                      title: "인접 알림"
+                      message: >
+                        {% set d = states('sensor.member_adjacency_<PAIR_ID>') | float(0) %}
+                        {% set u = state_attr('sensor.member_adjacency_<PAIR_ID>','unit_of_measurement') or '' %}
+                        B와의 거리는 {{ "{0:,.0f}".format(d) }}{{ u }} 입니다
+                      data:
+                        push:
+                          category: map
+                        action_data:
+                          latitude: "{{ state_attr('person.member_b','latitude') }}"
+                          longitude: "{{ state_attr('person.member_b','longitude') }}"
+                          latitude_delta: 0.005
+                          longitude_delta: 0.005
+                          shows_user_location: true
+                  - alias: "B에게 알림"
+                    action: notify.mobile_app_member_b
+                    data:
+                      title: "인접 알림"
+                      message: >
+                        {% set d = states('sensor.member_adjacency_<PAIR_ID>') | float(0) %}
+                        {% set u = state_attr('sensor.member_adjacency_<PAIR_ID>','unit_of_measurement') or '' %}
+                        A와의 거리는 {{ "{0:,.0f}".format(d) }}{{ u }} 입니다
+                      data:
+                        push:
+                          category: map
+                        action_data:
+                          latitude: "{{ state_attr('person.member_a','latitude') }}"
+                          longitude: "{{ state_attr('person.member_a','longitude') }}"
+                          latitude_delta: 0.005
+                          longitude_delta: 0.005
+                          shows_user_location: true
+                  - alias: "알림 잠금 ON(재알림 방지)"
+                    action: input_boolean.turn_on
+                    target:
+                      entity_id: input_boolean.adjacency_notify_lock
+
+      - alias: "이탈(멀어짐) 시 잠금 해제"
+        conditions:
+          - condition: trigger
+            id: exit_near
+        sequence:
+          - alias: "알림 잠금 OFF(다음 접근 시 다시 알림 가능)"
+            action: input_boolean.turn_off
+            target:
+              entity_id: input_boolean.adjacency_notify_lock

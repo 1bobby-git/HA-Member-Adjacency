@@ -109,6 +109,24 @@ Payload 예:
 
 ---
 
+## 자동화 예제: near 1회 알림(잠금) + 멀어지면 해제
+
+이 통합이 생성하는 거리 버킷(`very_near`, `near`, `mid`, `far`, `very_far`) 및 `proximity` 엔티티를 이용해 아래를 구현한 예제입니다.
+
+- `near`/`very_near`로 가까워질 때 **1회만** 알림 전송(잠금)
+- 다시 멀어지면 잠금을 해제하여 다음 접근 시 다시 알림 가능
+- 한 명만 집이면 **집에 있는 사람에게만** 알림
+- 둘 다 집이 아니면 **서로에게** 알림
+- 알림은 **지도(push category: map)** 로 상대의 현재 위치를 포함
+
+예제 YAML: [`examples/template.yaml`](examples/template.yaml)
+
+### 적용 전 수정 필요
+`<PAIR_ID>`, `device_tracker.*`, `person.*`, `notify.*`, `input_boolean.*` 를 본인 환경에 맞게 교체하세요.  
+또한 `input_boolean.adjacency_notify_lock`(1회 알림 잠금용 helper) 생성이 필요합니다.
+
+---
+
 ## Debug (Logs)
 
 `configuration.yaml`:
