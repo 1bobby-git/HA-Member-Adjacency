@@ -124,6 +124,7 @@ class _Base(SensorEntity):
 
             "bucket": self.mgr.data.bucket,
             "proximity": self.mgr.data.proximity,
+            "proximity_update_count": self.mgr.data.proximity_update_count,
             "proximity_duration_min": _round1(self.mgr.proximity_duration_minutes()),
             "proximity_duration_human": self.mgr.proximity_duration_human(),
             "last_changed": self.mgr.data.last_changed,

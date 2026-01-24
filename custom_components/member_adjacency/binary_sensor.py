@@ -60,6 +60,7 @@ class MemberAdjacencyProximityBinary(BinarySensorEntity):
             "data_valid": self.mgr.data.data_valid,
             "last_valid_updated": self.mgr.data.last_valid_updated,
             "last_error": self.mgr.data.last_error,
+            "proximity_update_count": self.mgr.data.proximity_update_count,
             "proximity_duration_min": self.mgr.proximity_duration_minutes(),
             "proximity_duration_human": self.mgr.proximity_duration_human(),
             "last_changed": self.mgr.data.last_changed,

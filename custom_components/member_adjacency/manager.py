@@ -31,6 +31,7 @@ from .const import (
     DOMAIN,
     EVENT_ENTER,
     EVENT_LEAVE,
+    EVENT_PROXIMITY_UPDATE,
     SIGNAL_UPDATE_PREFIX,
 )
 
@@ -52,6 +53,9 @@ class AdjacencyData:
 
     accuracy_a: float | None = None
     accuracy_b: float | None = None
+
+    # ✅ proximity zone 진입 후 위치 업데이트 횟수 (1 = 첫 진입, 2+ = 이후 업데이트)
+    proximity_update_count: int = 0
 
 
 def _get(entry: ConfigEntry, key: str, default: Any) -> Any:
@@ -396,6 +400,8 @@ class AdjacencyManager:
             self.data.last_changed = now_iso
 
             if prox:
+                # ✅ 근접 진입: update_count = 1 (첫 번째 감지)
+                self.data.proximity_update_count = 1
                 self.data.last_entered = now_iso
                 self._proximity_since = dt_util.utcnow()
                 self.hass.bus.async_fire(
@@ -406,9 +412,23 @@ class AdjacencyManager:
                         "distance_m": int(round(meters_raw)),
                         "entry_threshold_m": self.entry_th,
                         "exit_threshold_m": self.exit_th,
+                        "proximity_update_count": 1,
+                    },
+                )
+                # ✅ 근접 업데이트 이벤트 발생 (첫 번째)
+                self.hass.bus.async_fire(
+                    EVENT_PROXIMITY_UPDATE,
+                    {
+                        "entity_a": self.entity_a,
+                        "entity_b": self.entity_b,
+                        "distance_m": int(round(meters_raw)),
+                        "proximity_update_count": 1,
+                        "is_first_update": True,
                     },
                 )
             else:
+                # ✅ 근접 이탈: update_count 초기화
+                self.data.proximity_update_count = 0
                 self.data.last_left = now_iso
                 self._proximity_since = None
                 self.hass.bus.async_fire(
@@ -421,6 +441,19 @@ class AdjacencyManager:
                         "exit_threshold_m": self.exit_th,
                     },
                 )
+        elif prox:
+            # ✅ 이미 근접 상태에서 위치 업데이트 발생: count 증가
+            self.data.proximity_update_count += 1
+            self.hass.bus.async_fire(
+                EVENT_PROXIMITY_UPDATE,
+                {
+                    "entity_a": self.entity_a,
+                    "entity_b": self.entity_b,
+                    "distance_m": int(round(meters_raw)),
+                    "proximity_update_count": self.data.proximity_update_count,
+                    "is_first_update": False,
+                },
+            )
 
         if prox and self._proximity_since is None:
             self._proximity_since = dt_util.utcnow()

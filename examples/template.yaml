@@ -1,4 +1,228 @@
-alias: "Member Adjacency: near 1회 알림 + 멀어지면 해제"
+# ==============================================================================
+# 인접센서 자동화 예제 (Member Adjacency Automation Examples)
+# ==============================================================================
+# v1.2.0+ 권장: 이벤트 기반 방식 (input_boolean 잠금 불필요)
+# v1.1.x 호환: 상태 기반 + input_boolean 잠금 방식
+# ==============================================================================
+
+# ==============================================================================
+# 방법 1: 이벤트 기반 (v1.2.0+ 권장)
+# ==============================================================================
+# member_adjacency_enter 이벤트는 근접 진입 시 정확히 1회만 발생합니다.
+# input_boolean 잠금이 필요 없어 가장 간단하고 안정적입니다.
+# ==============================================================================
+
+alias: "Member Adjacency: 근접 알림 (이벤트 기반)"
+description: "근접 진입 시 정확히 1회만 알림. v1.2.0+ 권장 방식."
+mode: single
+triggers:
+  # 근접 진입 이벤트 (1회만 발생)
+  - trigger: event
+    event_type: member_adjacency_enter
+    event_data:
+      entity_a: sensor.member_a_geocoded_location
+      entity_b: sensor.member_b_geocoded_location
+    id: enter_proximity
+  # 근접 이탈 이벤트 (선택사항 - 로깅용)
+  - trigger: event
+    event_type: member_adjacency_leave
+    event_data:
+      entity_a: sensor.member_a_geocoded_location
+      entity_b: sensor.member_b_geocoded_location
+    id: leave_proximity
+conditions: []
+actions:
+  - alias: "접근/이탈 라우팅"
+    choose:
+      - alias: "근접 진입 시 알림"
+        conditions:
+          - condition: trigger
+            id: enter_proximity
+        sequence:
+          - alias: "알림 대상 결정"
+            choose:
+              - alias: "A가 집이고 B는 집이 아님 -> A에게 알림"
+                conditions:
+                  - condition: state
+                    entity_id: device_tracker.member_a
+                    state: "home"
+                  - condition: not
+                    conditions:
+                      - condition: state
+                        entity_id: device_tracker.member_b
+                        state: "home"
+                  - condition: state
+                    entity_id: input_boolean.member_a_door_lock
+                    state: "off"
+                sequence:
+                  - alias: "A에게 알림"
+                    action: notify.mobile_app_member_a
+                    data:
+                      title: "인접 알림"
+                      message: >
+                        {% set d = trigger.event.data.distance_m %}
+                        {% if d >= 1000 %}
+                          B와의 거리: {{ (d / 1000) | round(1) }}km
+                        {% else %}
+                          B와의 거리: {{ d | int }}m
+                        {% endif %}
+                      data:
+                        push:
+                          category: map
+                        action_data:
+                          latitude: "{{ state_attr('person.member_b','latitude') }}"
+                          longitude: "{{ state_attr('person.member_b','longitude') }}"
+                          latitude_delta: 0.005
+                          longitude_delta: 0.005
+                          shows_user_location: true
+
+              - alias: "B가 집이고 A는 집이 아님 -> B에게 알림"
+                conditions:
+                  - condition: state
+                    entity_id: device_tracker.member_b
+                    state: "home"
+                  - condition: not
+                    conditions:
+                      - condition: state
+                        entity_id: device_tracker.member_a
+                        state: "home"
+                  - condition: state
+                    entity_id: input_boolean.member_b_door_lock
+                    state: "off"
+                sequence:
+                  - alias: "B에게 알림"
+                    action: notify.mobile_app_member_b
+                    data:
+                      title: "인접 알림"
+                      message: >
+                        {% set d = trigger.event.data.distance_m %}
+                        {% if d >= 1000 %}
+                          A와의 거리: {{ (d / 1000) | round(1) }}km
+                        {% else %}
+                          A와의 거리: {{ d | int }}m
+                        {% endif %}
+                      data:
+                        push:
+                          category: map
+                        action_data:
+                          latitude: "{{ state_attr('person.member_a','latitude') }}"
+                          longitude: "{{ state_attr('person.member_a','longitude') }}"
+                          latitude_delta: 0.005
+                          longitude_delta: 0.005
+                          shows_user_location: true
+
+              - alias: "둘 다 집이 아님 -> 서로에게 알림"
+                conditions:
+                  - condition: template
+                    value_template: >
+                      {{ states('device_tracker.member_a') != 'home' and states('device_tracker.member_b') != 'home' }}
+                sequence:
+                  - alias: "A에게 알림"
+                    action: notify.mobile_app_member_a
+                    data:
+                      title: "인접 알림"
+                      message: >
+                        {% set d = trigger.event.data.distance_m %}
+                        {% if d >= 1000 %}
+                          B와의 거리: {{ (d / 1000) | round(1) }}km
+                        {% else %}
+                          B와의 거리: {{ d | int }}m
+                        {% endif %}
+                      data:
+                        push:
+                          category: map
+                        action_data:
+                          latitude: "{{ state_attr('person.member_b','latitude') }}"
+                          longitude: "{{ state_attr('person.member_b','longitude') }}"
+                          latitude_delta: 0.005
+                          longitude_delta: 0.005
+                          shows_user_location: true
+                  - alias: "B에게 알림"
+                    action: notify.mobile_app_member_b
+                    data:
+                      title: "인접 알림"
+                      message: >
+                        {% set d = trigger.event.data.distance_m %}
+                        {% if d >= 1000 %}
+                          A와의 거리: {{ (d / 1000) | round(1) }}km
+                        {% else %}
+                          A와의 거리: {{ d | int }}m
+                        {% endif %}
+                      data:
+                        push:
+                          category: map
+                        action_data:
+                          latitude: "{{ state_attr('person.member_a','latitude') }}"
+                          longitude: "{{ state_attr('person.member_a','longitude') }}"
+                          latitude_delta: 0.005
+                          longitude_delta: 0.005
+                          shows_user_location: true
+
+      - alias: "근접 이탈 시 로깅 (선택사항)"
+        conditions:
+          - condition: trigger
+            id: leave_proximity
+        sequence:
+          - alias: "로그 기록"
+            action: system_log.write
+            data:
+              message: "인접센서: 근접 이탈 감지"
+              level: info
+
+---
+
+# ==============================================================================
+# 방법 2: 상태 기반 + proximity_update_count (v1.2.0+)
+# ==============================================================================
+# proximity 바이너리 센서 상태 변경을 트리거로 사용하되,
+# proximity_update_count == 1 조건으로 첫 번째 감지만 처리합니다.
+# ==============================================================================
+
+alias: "Member Adjacency: 근접 알림 (상태 기반 + update_count)"
+description: "proximity_update_count를 이용한 1회 알림. v1.2.0+ 방식."
+mode: single
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.member_adjacency_<PAIR_ID>_proximity
+    to: "on"
+    id: proximity_on
+conditions:
+  # 첫 번째 업데이트일 때만 실행
+  - condition: template
+    value_template: >
+      {{ state_attr('binary_sensor.member_adjacency_<PAIR_ID>_proximity',
+         'proximity_update_count') == 1 }}
+actions:
+  - alias: "알림 전송"
+    action: notify.mobile_app_member_a
+    data:
+      title: "인접 알림"
+      message: >
+        {% set txt = state_attr('sensor.member_adjacency_<PAIR_ID>', 'display_text') %}
+        B와의 거리: {{ txt }}
+      data:
+        push:
+          category: map
+        action_data:
+          latitude: "{{ state_attr('person.member_b','latitude') }}"
+          longitude: "{{ state_attr('person.member_b','longitude') }}"
+          latitude_delta: 0.005
+          longitude_delta: 0.005
+          shows_user_location: true
+
+---
+
+# ==============================================================================
+# 방법 3: 기존 방식 (v1.1.x 호환 - input_boolean 잠금)
+# ==============================================================================
+# bucket 상태 변경을 트리거로 사용하고, input_boolean으로 1회 알림을 관리합니다.
+# v1.2.0 이전 버전 또는 기존 자동화와의 호환성이 필요할 때 사용하세요.
+#
+# 필요한 헬퍼:
+# - input_boolean.adjacency_notify_lock (1회 알림 잠금용)
+# ==============================================================================
+
+alias: "Member Adjacency: near 1회 알림 + 멀어지면 해제 (레거시)"
 description: "bucket이 near/very_near로 진입하면 조건 만족 시 1회만 지도 알림을 보냅니다(잠금). 다시 멀어지면 잠금을 해제합니다. 한 명만 집이면 집에 있는 사람에게만, 둘 다 집이 아니면 서로에게 알립니다."
 mode: single
 triggers:

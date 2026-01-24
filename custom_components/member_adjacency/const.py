@@ -33,5 +33,6 @@ BUCKETS = [
 
 EVENT_ENTER = "member_adjacency_enter"
 EVENT_LEAVE = "member_adjacency_leave"
+EVENT_PROXIMITY_UPDATE = "member_adjacency_proximity_update"
 
 SIGNAL_UPDATE_PREFIX = "member_adjacency_update"
