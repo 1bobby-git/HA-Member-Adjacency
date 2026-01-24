@@ -24,16 +24,14 @@
 - **근접 지속시간 센서(proximity duration)**
   - `5분`, `1시간 20분`처럼 사람이 읽기 쉬운 형태로 표시합니다.
   - 숫자(분)는 `attributes.proximity_duration_min`로도 제공됩니다.
-- **근접 업데이트 카운트**
-  - `proximity_update_count`: 근접 진입 후 위치 업데이트 횟수
-  - `1` = 첫 번째 감지, `2+` = 이후 업데이트
-  - 자동화에서 "정확히 1회만 알림" 구현에 활용
+- **근접 업데이트 카운트(proximity_update_count)**
+  - 근접 진입 후 위치 업데이트 횟수를 추적합니다.
+  - `1` = 첫 번째 감지, `2+` = 이후 업데이트, `0` = 근접 이탈
+  - 자동화에서 **"정확히 1회만 알림"** 구현 시 `input_boolean` 잠금 없이 사용 가능
 - **새로고침 버튼(refresh)**
-  버튼을 누르면 가능한 범위에서 "소스 위치 업데이트"를 요청한 뒤, 즉시 재계산합니다.
-  - `mobile_app` 기기(가능한 경우): `notify.mobile_app_*`에 `request_location_update` 명령
-  - 그 외 엔티티: `homeassistant.update_entity`
+  - 버튼을 누르면 "소스 위치 업데이트"를 요청한 뒤, 즉시 재계산합니다.
 - **정확도 필터/디바운스**
-  - 정확도 속성(`gps_accuracy`/`accuracy`/`horizontal_accuracy`)이 있을 경우 `max_accuracy_m` 기준 필터
+  - 정확도 속성이 있을 경우 `max_accuracy_m` 기준 필터
   - `debounce_seconds`로 잦은 업데이트 묶음 처리
 - **이벤트(Event) 발행**
   - `member_adjacency_enter` : 근접 진입 (1회)
@@ -116,41 +114,12 @@ A-B 한 쌍을 추가하면, 해당 쌍은 **하나의 기기(Device)** 로 묶�
 
 ---
 
-## 자동화 예제 (권장: 이벤트 기반)
+## 자동화 예제
 
-`member_adjacency_enter` 이벤트는 근접 진입 시 **정확히 1회만** 발생합니다.
-`input_boolean` 잠금이 필요 없어 가장 간단하고 안정적입니다.
+`member_adjacency_enter` 이벤트를 트리거로 사용하면 근접 진입 시 **정확히 1회만** 알림을 보낼 수 있습니다.
+기존처럼 `input_boolean` 잠금이 필요 없어 자동화가 간단해집니다.
 
-```yaml
-alias: "인접센서: 근접 알림"
-description: "근접 진입 시 정확히 1회만 알림"
-mode: single
-triggers:
-  - trigger: event
-    event_type: member_adjacency_enter
-    event_data:
-      entity_a: sensor.member_a_geocoded_location
-      entity_b: sensor.member_b_geocoded_location
-actions:
-  - action: notify.mobile_app_member_a
-    data:
-      title: "인접 알림"
-      message: >
-        {% set d = trigger.event.data.distance_m %}
-        {% if d >= 1000 %}
-          거리: {{ (d / 1000) | round(1) }}km
-        {% else %}
-          거리: {{ d | int }}m
-        {% endif %}
-      data:
-        push:
-          category: map
-        action_data:
-          latitude: "{{ state_attr('person.member_b','latitude') }}"
-          longitude: "{{ state_attr('person.member_b','longitude') }}"
-```
-
-더 많은 예제: [`examples/template.yaml`](examples/template.yaml)
+예제 파일: [`examples/template.yaml`](examples/template.yaml)
 
 ---
 
@@ -164,26 +133,6 @@ logger:
   logs:
     custom_components.member_adjacency: debug
 ```
-
----
-
-## Version History
-
-### v1.2.0 (2025-01-24)
-
-**v1.1.8 대비 변경사항:**
-
-| 구분 | v1.1.8 | v1.2.0 |
-|------|--------|--------|
-| 1회 알림 구현 | `input_boolean` 잠금 필요 | 이벤트/속성 기반으로 잠금 불필요 |
-| 근접 업데이트 추적 | 없음 | `proximity_update_count` 속성 |
-| 근접 업데이트 이벤트 | 없음 | `member_adjacency_proximity_update` |
-| 중복 알림 방지 | 자동화에서 별도 처리 | 통합에서 기본 지원 |
-
-**새 기능:**
-- `proximity_update_count`: 근접 진입 후 위치 업데이트 횟수 (`1` = 첫 감지)
-- `member_adjacency_proximity_update` 이벤트: 근접 중 위치 업데이트마다 발생
-- `member_adjacency_enter` 이벤트에 `proximity_update_count` 추가
 
 ---
 
