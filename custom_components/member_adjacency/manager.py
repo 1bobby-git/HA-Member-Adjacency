@@ -725,15 +725,23 @@ class AdjacencyManager:
 
                 # Determine which event to fire based on reliability and config
                 event_data = {
+                    # New semantic naming (v1.4+)
+                    "base_entity": self.base_entity,
+                    "tracker_entity": self.tracker_entity,
+                    # Legacy keys (backward compatibility)
                     "entity_a": self.entity_a,
                     "entity_b": self.entity_b,
+                    # Distance and thresholds
                     "distance_m": int(round(meters_raw)),
                     "entry_threshold_m": self.entry_th,
                     "exit_threshold_m": self.exit_th,
                     "proximity_update_count": 1,
-                    # 신뢰도 정보 추가
+                    # 신뢰도 정보
                     "proximity_reliable": reliable,
                     "unreliable_reason": unreliable_reason,
+                    "base_updates_in_window": self.data.a_updates_in_window,
+                    "tracker_updates_in_window": self.data.b_updates_in_window,
+                    # Legacy aliases
                     "a_updates_in_window": self.data.a_updates_in_window,
                     "b_updates_in_window": self.data.b_updates_in_window,
                     "convergence_speed_kmh": round(self.data.convergence_speed_kmh, 1) if self.data.convergence_speed_kmh else None,
@@ -749,6 +757,8 @@ class AdjacencyManager:
                     self.hass.bus.async_fire(
                         EVENT_PROXIMITY_UPDATE,
                         {
+                            "base_entity": self.base_entity,
+                            "tracker_entity": self.tracker_entity,
                             "entity_a": self.entity_a,
                             "entity_b": self.entity_b,
                             "distance_m": int(round(meters_raw)),
@@ -766,6 +776,8 @@ class AdjacencyManager:
                 self.hass.bus.async_fire(
                     EVENT_LEAVE,
                     {
+                        "base_entity": self.base_entity,
+                        "tracker_entity": self.tracker_entity,
                         "entity_a": self.entity_a,
                         "entity_b": self.entity_b,
                         "distance_m": int(round(meters_raw)),
@@ -781,6 +793,8 @@ class AdjacencyManager:
                 self.hass.bus.async_fire(
                     EVENT_PROXIMITY_UPDATE,
                     {
+                        "base_entity": self.base_entity,
+                        "tracker_entity": self.tracker_entity,
                         "entity_a": self.entity_a,
                         "entity_b": self.entity_b,
                         "distance_m": int(round(meters_raw)),
