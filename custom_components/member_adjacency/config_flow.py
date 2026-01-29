@@ -192,7 +192,7 @@ def _num_slider(min_v: int, max_v: int, step: int, unit: str | None = None) -> s
 
 
 class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    VERSION = 1
+    VERSION = 2
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         errors: dict[str, str] = {}

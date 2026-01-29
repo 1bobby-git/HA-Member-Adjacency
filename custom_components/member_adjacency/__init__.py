@@ -12,8 +12,34 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, PLATFORMS
+from .const import (
+    DOMAIN,
+    PLATFORMS,
+    CONF_ENTITY_A,
+    CONF_ENTITY_B,
+    CONF_BASE_ENTITY,
+    CONF_TRACKER_ENTITY,
+)
 from .manager import AdjacencyManager
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old config entry to new format."""
+    if entry.version == 1:
+        # v1.3.x used entity_a/entity_b, v1.4.x uses base_entity/tracker_entity
+        new_data = dict(entry.data)
+
+        # Migrate entity_a -> base_entity if needed
+        if CONF_ENTITY_A in new_data and CONF_BASE_ENTITY not in new_data:
+            new_data[CONF_BASE_ENTITY] = new_data[CONF_ENTITY_A]
+
+        # Migrate entity_b -> tracker_entity if needed
+        if CONF_ENTITY_B in new_data and CONF_TRACKER_ENTITY not in new_data:
+            new_data[CONF_TRACKER_ENTITY] = new_data[CONF_ENTITY_B]
+
+        hass.config_entries.async_update_entry(entry, data=new_data, version=2)
+
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
