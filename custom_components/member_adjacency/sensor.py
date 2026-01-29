@@ -1,11 +1,12 @@
 """
 Sensor platform for the Member Adjacency component.
 
-This module exposes multiple sensor entities representing the distance
-between two tracked entities, the bucketed distance category, the
-duration of the current proximity state and the estimated speeds of
-each individual entity.  All sensors share a common base class which
-subscribes to update signals from the underlying :class:`AdjacencyManager`.
+This module exposes sensor entities representing the distance between
+two tracked entities, the bucketed distance category, and the duration
+of the current proximity state.  Speed information is available as
+attributes on these sensors rather than separate entities.  All sensors
+share a common base class which subscribes to update signals from the
+underlying :class:`AdjacencyManager`.
 """
 
 from __future__ import annotations
@@ -60,28 +61,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         suggested_object_id=f"member_adjacency_{pair_key}_proximity_duration",
         config_entry=entry,
     )
-    ent_reg.async_get_or_create(
-        "sensor",
-        DOMAIN,
-        f"{entry.entry_id}_speed_a",
-        suggested_object_id=f"member_adjacency_{pair_key}_speed_a",
-        config_entry=entry,
-    )
-    ent_reg.async_get_or_create(
-        "sensor",
-        DOMAIN,
-        f"{entry.entry_id}_speed_b",
-        suggested_object_id=f"member_adjacency_{pair_key}_speed_b",
-        config_entry=entry,
-    )
+    # Note: Speed sensors removed in v1.4.1 - speed info available as attributes
 
     async_add_entities(
         [
             MemberAdjacencyDistanceSensor(mgr),
             MemberAdjacencyBucketSensor(mgr),
             MemberAdjacencyProximityDurationSensor(mgr),
-            MemberAdjacencySpeedASensor(mgr),
-            MemberAdjacencySpeedBSensor(mgr),
         ]
     )
 
@@ -267,55 +253,3 @@ class MemberAdjacencyProximityDurationSensor(_Base):
         return self._common_attrs()
 
 
-class MemberAdjacencySpeedASensor(_Base):
-    """Sensor reporting the estimated speed of base entity (기준점) in km/h."""
-
-    _attr_device_class = SensorDeviceClass.SPEED
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:speedometer"
-
-    def __init__(self, mgr: AdjacencyManager) -> None:
-        super().__init__(mgr)
-        self._attr_unique_id = f"{mgr.entry.entry_id}_speed_a"
-        # Base entity speed
-        self._attr_name = f"{mgr.get_base_name()} 속도"
-
-    @property
-    def native_unit_of_measurement(self) -> str | None:
-        return "km/h"
-
-    @property
-    def native_value(self) -> float | None:
-        v = self.mgr.a_speed_kmh
-        return None if v is None else _round1(v)
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        return self._common_attrs()
-
-
-class MemberAdjacencySpeedBSensor(_Base):
-    """Sensor reporting the estimated speed of tracker entity (추적 대상) in km/h."""
-
-    _attr_device_class = SensorDeviceClass.SPEED
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = "mdi:speedometer"
-
-    def __init__(self, mgr: AdjacencyManager) -> None:
-        super().__init__(mgr)
-        self._attr_unique_id = f"{mgr.entry.entry_id}_speed_b"
-        # Tracker entity speed
-        self._attr_name = f"{mgr.get_tracker_name()} 속도"
-
-    @property
-    def native_unit_of_measurement(self) -> str | None:
-        return "km/h"
-
-    @property
-    def native_value(self) -> float | None:
-        v = self.mgr.b_speed_kmh
-        return None if v is None else _round1(v)
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        return self._common_attrs()
