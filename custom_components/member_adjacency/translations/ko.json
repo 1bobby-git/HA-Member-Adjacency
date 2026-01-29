@@ -13,27 +13,38 @@
           "debounce_seconds": "디바운스 (초)",
           "max_accuracy_m": "최대 허용 정확도 (m)",
           "force_meters": "표시 단위 m 고정",
-          "resync_silence_s": "재동기화 감지 침묵 시간 (초)",
-          "resync_hold_s": "재동기화 후 대기 시간 (초)",
-          "max_speed_kmh": "최대 허용 속도 (km/h)",
-          "min_updates_for_proximity": "최소 업데이트 수",
-          "update_window_s": "업데이트 윈도우 (초)",
-          "require_reliable_proximity": "신뢰 가능한 근접만 이벤트 발생"
+          "advanced_settings": "고급 설정"
         },
         "data_description": {
-          "base_entity": "집, 사무실 등 기준이 되는 위치",
-          "tracker_entity": "나, 내 폰 등 추적할 대상",
+          "base_entity": "집, 사무실 등 기준이 되는 위치 (목록에 없으면 직접 입력)",
+          "tracker_entity": "나, 내 폰 등 추적할 대상 (목록에 없으면 직접 입력)",
           "entry_threshold_m": "이 거리 이하면 근접 ON",
           "exit_threshold_m": "이 거리 이상이면 근접 OFF",
           "debounce_seconds": "0=즉시 반영",
           "max_accuracy_m": "0=정확도 무시",
-          "force_meters": "저장은 항상 m 단위",
-          "resync_silence_s": "이 시간동안 업데이트가 없으면 재동기화 감지",
-          "resync_hold_s": "재동기화 감지 후 업데이트 무시 시간",
-          "max_speed_kmh": "이 속도 초과 시 비정상으로 간주",
-          "min_updates_for_proximity": "신뢰 가능 판정에 필요한 최소 업데이트 횟수",
-          "update_window_s": "업데이트 횟수를 카운트하는 시간 범위",
-          "require_reliable_proximity": "비신뢰 데이터는 별도 이벤트로 발생"
+          "force_meters": "저장은 항상 m 단위"
+        },
+        "sections": {
+          "advanced_settings": {
+            "name": "고급 설정",
+            "description": "GPS 신뢰도 필터링 및 재동기화 설정",
+            "data": {
+              "resync_silence_s": "재동기화 감지 침묵 시간 (초)",
+              "resync_hold_s": "재동기화 후 대기 시간 (초)",
+              "max_speed_kmh": "최대 허용 속도 (km/h)",
+              "min_updates_for_proximity": "최소 업데이트 수",
+              "update_window_s": "업데이트 윈도우 (초)",
+              "require_reliable_proximity": "신뢰 가능한 근접만 이벤트 발생"
+            },
+            "data_description": {
+              "resync_silence_s": "이 시간동안 업데이트가 없으면 재동기화 감지",
+              "resync_hold_s": "재동기화 감지 후 업데이트 무시 시간",
+              "max_speed_kmh": "이 속도 초과 시 비정상으로 간주",
+              "min_updates_for_proximity": "신뢰 가능 판정에 필요한 최소 업데이트 횟수",
+              "update_window_s": "업데이트 횟수를 카운트하는 시간 범위",
+              "require_reliable_proximity": "비신뢰 데이터는 별도 이벤트로 발생"
+            }
+          }
         }
       }
     },
@@ -57,25 +68,36 @@
           "debounce_seconds": "디바운스 (초)",
           "max_accuracy_m": "최대 허용 정확도 (m)",
           "force_meters": "표시 단위 m 고정",
-          "resync_silence_s": "재동기화 감지 침묵 시간 (초)",
-          "resync_hold_s": "재동기화 후 대기 시간 (초)",
-          "max_speed_kmh": "최대 허용 속도 (km/h)",
-          "min_updates_for_proximity": "최소 업데이트 수",
-          "update_window_s": "업데이트 윈도우 (초)",
-          "require_reliable_proximity": "신뢰 가능한 근접만 이벤트 발생"
+          "advanced_settings": "고급 설정"
         },
         "data_description": {
           "entry_threshold_m": "이 거리 이하면 근접 ON",
           "exit_threshold_m": "이 거리 이상이면 근접 OFF",
           "debounce_seconds": "0=즉시 반영",
           "max_accuracy_m": "0=정확도 무시",
-          "force_meters": "저장은 항상 m 단위",
-          "resync_silence_s": "이 시간동안 업데이트가 없으면 재동기화 감지",
-          "resync_hold_s": "재동기화 감지 후 업데이트 무시 시간",
-          "max_speed_kmh": "이 속도 초과 시 비정상으로 간주",
-          "min_updates_for_proximity": "신뢰 가능 판정에 필요한 최소 업데이트 횟수",
-          "update_window_s": "업데이트 횟수를 카운트하는 시간 범위",
-          "require_reliable_proximity": "비신뢰 데이터는 별도 이벤트로 발생"
+          "force_meters": "저장은 항상 m 단위"
+        },
+        "sections": {
+          "advanced_settings": {
+            "name": "고급 설정",
+            "description": "GPS 신뢰도 필터링 및 재동기화 설정",
+            "data": {
+              "resync_silence_s": "재동기화 감지 침묵 시간 (초)",
+              "resync_hold_s": "재동기화 후 대기 시간 (초)",
+              "max_speed_kmh": "최대 허용 속도 (km/h)",
+              "min_updates_for_proximity": "최소 업데이트 수",
+              "update_window_s": "업데이트 윈도우 (초)",
+              "require_reliable_proximity": "신뢰 가능한 근접만 이벤트 발생"
+            },
+            "data_description": {
+              "resync_silence_s": "이 시간동안 업데이트가 없으면 재동기화 감지",
+              "resync_hold_s": "재동기화 감지 후 업데이트 무시 시간",
+              "max_speed_kmh": "이 속도 초과 시 비정상으로 간주",
+              "min_updates_for_proximity": "신뢰 가능 판정에 필요한 최소 업데이트 횟수",
+              "update_window_s": "업데이트 횟수를 카운트하는 시간 범위",
+              "require_reliable_proximity": "비신뢰 데이터는 별도 이벤트로 발생"
+            }
+          }
         }
       }
     }

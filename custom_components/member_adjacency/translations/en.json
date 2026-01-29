@@ -13,27 +13,38 @@
           "debounce_seconds": "Debounce (seconds)",
           "max_accuracy_m": "Max accuracy allowed (m)",
           "force_meters": "Force display to meters",
-          "resync_silence_s": "Resync detection silence (seconds)",
-          "resync_hold_s": "Hold time after resync (seconds)",
-          "max_speed_kmh": "Max allowed speed (km/h)",
-          "min_updates_for_proximity": "Min updates for reliable proximity",
-          "update_window_s": "Update count window (seconds)",
-          "require_reliable_proximity": "Only fire events on reliable proximity"
+          "advanced_settings": "Advanced Settings"
         },
         "data_description": {
-          "base_entity": "Home, office, etc. - the reference point",
-          "tracker_entity": "Me, my phone, etc. - the entity to track",
+          "base_entity": "Home, office, etc. (type manually if not in list)",
+          "tracker_entity": "Me, my phone, etc. (type manually if not in list)",
           "entry_threshold_m": "Distance <= this triggers proximity ON",
           "exit_threshold_m": "Distance >= this triggers proximity OFF",
           "debounce_seconds": "0=immediate update",
           "max_accuracy_m": "0=ignore accuracy",
-          "force_meters": "Stored unit is always meters",
-          "resync_silence_s": "No updates for this duration triggers resync detection",
-          "resync_hold_s": "Ignore updates for this duration after resync",
-          "max_speed_kmh": "Speed exceeding this is considered invalid",
-          "min_updates_for_proximity": "Minimum update count for reliable proximity determination",
-          "update_window_s": "Time window for counting updates",
-          "require_reliable_proximity": "Unreliable data fires separate event"
+          "force_meters": "Stored unit is always meters"
+        },
+        "sections": {
+          "advanced_settings": {
+            "name": "Advanced Settings",
+            "description": "GPS reliability filtering and resync settings",
+            "data": {
+              "resync_silence_s": "Resync detection silence (seconds)",
+              "resync_hold_s": "Hold time after resync (seconds)",
+              "max_speed_kmh": "Max allowed speed (km/h)",
+              "min_updates_for_proximity": "Min updates for reliable proximity",
+              "update_window_s": "Update count window (seconds)",
+              "require_reliable_proximity": "Only fire events on reliable proximity"
+            },
+            "data_description": {
+              "resync_silence_s": "No updates for this duration triggers resync detection",
+              "resync_hold_s": "Ignore updates for this duration after resync",
+              "max_speed_kmh": "Speed exceeding this is considered invalid",
+              "min_updates_for_proximity": "Minimum update count for reliable proximity determination",
+              "update_window_s": "Time window for counting updates",
+              "require_reliable_proximity": "Unreliable data fires separate event"
+            }
+          }
         }
       }
     },
@@ -57,25 +68,36 @@
           "debounce_seconds": "Debounce (seconds)",
           "max_accuracy_m": "Max accuracy allowed (m)",
           "force_meters": "Force display to meters",
-          "resync_silence_s": "Resync detection silence (seconds)",
-          "resync_hold_s": "Hold time after resync (seconds)",
-          "max_speed_kmh": "Max allowed speed (km/h)",
-          "min_updates_for_proximity": "Min updates for reliable proximity",
-          "update_window_s": "Update count window (seconds)",
-          "require_reliable_proximity": "Only fire events on reliable proximity"
+          "advanced_settings": "Advanced Settings"
         },
         "data_description": {
           "entry_threshold_m": "Distance <= this triggers proximity ON",
           "exit_threshold_m": "Distance >= this triggers proximity OFF",
           "debounce_seconds": "0=immediate update",
           "max_accuracy_m": "0=ignore accuracy",
-          "force_meters": "Stored unit is always meters",
-          "resync_silence_s": "No updates for this duration triggers resync detection",
-          "resync_hold_s": "Ignore updates for this duration after resync",
-          "max_speed_kmh": "Speed exceeding this is considered invalid",
-          "min_updates_for_proximity": "Minimum update count for reliable proximity determination",
-          "update_window_s": "Time window for counting updates",
-          "require_reliable_proximity": "Unreliable data fires separate event"
+          "force_meters": "Stored unit is always meters"
+        },
+        "sections": {
+          "advanced_settings": {
+            "name": "Advanced Settings",
+            "description": "GPS reliability filtering and resync settings",
+            "data": {
+              "resync_silence_s": "Resync detection silence (seconds)",
+              "resync_hold_s": "Hold time after resync (seconds)",
+              "max_speed_kmh": "Max allowed speed (km/h)",
+              "min_updates_for_proximity": "Min updates for reliable proximity",
+              "update_window_s": "Update count window (seconds)",
+              "require_reliable_proximity": "Only fire events on reliable proximity"
+            },
+            "data_description": {
+              "resync_silence_s": "No updates for this duration triggers resync detection",
+              "resync_hold_s": "Ignore updates for this duration after resync",
+              "max_speed_kmh": "Speed exceeding this is considered invalid",
+              "min_updates_for_proximity": "Minimum update count for reliable proximity determination",
+              "update_window_s": "Time window for counting updates",
+              "require_reliable_proximity": "Unreliable data fires separate event"
+            }
+          }
         }
       }
     }
