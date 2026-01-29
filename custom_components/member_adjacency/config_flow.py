@@ -105,14 +105,21 @@ def _friendly_or_entity(hass: HomeAssistant, entity_id: str) -> str:
 
 
 def _label_for_entity(hass: HomeAssistant, entity_id: str) -> str:
-    """Create a descriptive label for an entity."""
+    """Create a descriptive label for an entity (device name or friendly name only)."""
     dev_name = _device_name_for_entity(hass, entity_id)
     if dev_name:
-        return f"{dev_name} ({entity_id})"
+        return dev_name
     fn = _friendly_or_entity(hass, entity_id)
     if fn != entity_id:
-        return f"{fn} ({entity_id})"
-    return entity_id
+        return fn
+    # Fallback: extract readable name from entity_id
+    obj_id = entity_id.split(".", 1)[1] if "." in entity_id else entity_id
+    # Remove common suffixes for cleaner display
+    for suffix in ("_geocoded_location", "_location", "_gps"):
+        if obj_id.endswith(suffix):
+            obj_id = obj_id[:-len(suffix)]
+            break
+    return obj_id.replace("_", " ").title()
 
 
 def _group_name(entity_id: str) -> str:
