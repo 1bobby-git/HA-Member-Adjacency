@@ -1,8 +1,22 @@
+"""
+Sensor platform for the Member Adjacency component.
+
+This module exposes multiple sensor entities representing the distance
+between two tracked entities, the bucketed distance category, the
+duration of the current proximity state and the estimated speeds of
+each individual entity.  All sensors share a common base class which
+subscribes to update signals from the underlying :class:`AdjacencyManager`.
+"""
+
 from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfLength
 from homeassistant.core import HomeAssistant, callback
@@ -18,11 +32,13 @@ def _round1(x: float) -> float:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities) -> None:
+    """Set up Member Adjacency sensors for a config entry."""
     mgr: AdjacencyManager = hass.data[DOMAIN][entry.entry_id]
 
     ent_reg = er.async_get(hass)
     pair_key = mgr.pair_key
 
+    # Ensure all sensor entities are created in the entity registry
     ent_reg.async_get_or_create(
         "sensor",
         DOMAIN,
@@ -44,17 +60,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         suggested_object_id=f"member_adjacency_{pair_key}_proximity_duration",
         config_entry=entry,
     )
+    ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}_speed_a",
+        suggested_object_id=f"member_adjacency_{pair_key}_speed_a",
+        config_entry=entry,
+    )
+    ent_reg.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"{entry.entry_id}_speed_b",
+        suggested_object_id=f"member_adjacency_{pair_key}_speed_b",
+        config_entry=entry,
+    )
 
     async_add_entities(
         [
             MemberAdjacencyDistanceSensor(mgr),
             MemberAdjacencyBucketSensor(mgr),
             MemberAdjacencyProximityDurationSensor(mgr),
+            MemberAdjacencySpeedASensor(mgr),
+            MemberAdjacencySpeedBSensor(mgr),
         ]
     )
 
 
 class _Base(SensorEntity):
+    """Base class for all Member Adjacency sensors."""
+
     _attr_should_poll = False
 
     def __init__(self, mgr: AdjacencyManager) -> None:
@@ -74,21 +108,17 @@ class _Base(SensorEntity):
         return self.mgr.device_info()
 
     def _display(self, meters: float) -> tuple[float, str, str]:
-        """
-        표시용 값/단위/텍스트.
-        - force_meters=True => 항상 m
-        - 아니면 1000m 이상이면 km 표시
-        """
+        """Return display value/unit/text given a distance in meters."""
         if self.mgr.force_meters or meters < 1000:
             v = _round1(meters)
             u = "m"
             return v, u, f"{v} m"
-
         v = _round1(meters / 1000.0)
         u = "km"
         return v, u, f"{v} km"
 
     def _common_attrs(self) -> dict[str, Any]:
+        """Attributes common to all adjacency sensors."""
         d_m = self.mgr.data.distance_m
         display_value = None
         display_unit = None
@@ -107,20 +137,42 @@ class _Base(SensorEntity):
             "debounce_seconds": self.mgr.debounce_s,
             "max_accuracy_m": self.mgr.max_acc_m,
             "force_meters": self.mgr.force_meters,
+            # movement/resync configuration
+            "resync_silence_s": self.mgr.resync_silence_s,
+            "resync_hold_s": self.mgr.resync_hold_s,
+            "max_speed_kmh": self.mgr.max_speed_kmh,
+            "min_updates_for_proximity": self.mgr.min_updates_for_proximity,
+            "update_window_s": self.mgr.update_window_s,
+
             "data_valid": self.mgr.data.data_valid,
             "last_valid_updated": self.mgr.data.last_valid_updated,
             "last_error": self.mgr.data.last_error,
             "accuracy_a": None if self.mgr.data.accuracy_a is None else _round1(self.mgr.data.accuracy_a),
             "accuracy_b": None if self.mgr.data.accuracy_b is None else _round1(self.mgr.data.accuracy_b),
 
-            # ✅ 저장/통계용(항상 meters)
+            # raw distance values
             "distance_m": None if d_m is None else _round1(d_m),
             "distance_km": None if d_m is None else _round1(d_m / 1000.0),
 
-            # ✅ 표시용(자동 m/km 전환)
+            # display values (automatic m/km switching)
             "display_value": display_value,
             "display_unit": display_unit,
             "display_text": display_text,
+
+            # movement tracking
+            "speed_a_kmh": None if self.mgr.a_speed_kmh is None else _round1(self.mgr.a_speed_kmh),
+            "speed_b_kmh": None if self.mgr.b_speed_kmh is None else _round1(self.mgr.b_speed_kmh),
+            "a_last_fix": self.mgr.a_last_fix.isoformat() if self.mgr.a_last_fix else None,
+            "b_last_fix": self.mgr.b_last_fix.isoformat() if self.mgr.b_last_fix else None,
+            "a_resync_until": self.mgr.a_resync_until.isoformat() if self.mgr.a_resync_until else None,
+            "b_resync_until": self.mgr.b_resync_until.isoformat() if self.mgr.b_resync_until else None,
+
+            # 신뢰도 정보
+            "proximity_reliable": self.mgr.data.proximity_reliable,
+            "unreliable_reason": self.mgr.data.unreliable_reason,
+            "a_updates_in_window": self.mgr.data.a_updates_in_window,
+            "b_updates_in_window": self.mgr.data.b_updates_in_window,
+            "convergence_speed_kmh": None if self.mgr.data.convergence_speed_kmh is None else _round1(self.mgr.data.convergence_speed_kmh),
 
             "bucket": self.mgr.data.bucket,
             "proximity": self.mgr.data.proximity,
@@ -134,6 +186,8 @@ class _Base(SensorEntity):
 
 
 class MemberAdjacencyDistanceSensor(_Base):
+    """Sensor reporting the raw distance between two entities in meters."""
+
     _attr_device_class = SensorDeviceClass.DISTANCE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:arrow-left-right"
@@ -145,12 +199,11 @@ class MemberAdjacencyDistanceSensor(_Base):
 
     @property
     def native_unit_of_measurement(self) -> str | None:
-        # ✅ 항상 meters로 고정 (통계 안정화)
+        # always store meters as native unit (statistics stable)
         return UnitOfLength.METERS
 
     @property
     def native_value(self) -> float | None:
-        # ✅ 항상 meters로 저장 (표시는 attributes에서)
         d = self.mgr.data.distance_m
         if d is None:
             return None
@@ -162,6 +215,8 @@ class MemberAdjacencyDistanceSensor(_Base):
 
 
 class MemberAdjacencyBucketSensor(_Base):
+    """Sensor reporting the named bucket for the current distance."""
+
     _attr_icon = "mdi:map-marker-distance"
 
     def __init__(self, mgr: AdjacencyManager) -> None:
@@ -179,6 +234,8 @@ class MemberAdjacencyBucketSensor(_Base):
 
 
 class MemberAdjacencyProximityDurationSensor(_Base):
+    """Sensor reporting the duration of the current proximity state."""
+
     _attr_icon = "mdi:timer-outline"
 
     def __init__(self, mgr: AdjacencyManager) -> None:
@@ -189,6 +246,58 @@ class MemberAdjacencyProximityDurationSensor(_Base):
     @property
     def native_value(self) -> str:
         return self.mgr.proximity_duration_human()
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._common_attrs()
+
+
+class MemberAdjacencySpeedASensor(_Base):
+    """Sensor reporting the estimated speed of entity A in km/h."""
+
+    _attr_device_class = SensorDeviceClass.SPEED
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:speedometer"
+
+    def __init__(self, mgr: AdjacencyManager) -> None:
+        super().__init__(mgr)
+        self._attr_unique_id = f"{mgr.entry.entry_id}_speed_a"
+        self._attr_name = f"{DEFAULT_NAME_KO} A 속도"
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        return "km/h"
+
+    @property
+    def native_value(self) -> float | None:
+        v = self.mgr.a_speed_kmh
+        return None if v is None else _round1(v)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._common_attrs()
+
+
+class MemberAdjacencySpeedBSensor(_Base):
+    """Sensor reporting the estimated speed of entity B in km/h."""
+
+    _attr_device_class = SensorDeviceClass.SPEED
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:speedometer"
+
+    def __init__(self, mgr: AdjacencyManager) -> None:
+        super().__init__(mgr)
+        self._attr_unique_id = f"{mgr.entry.entry_id}_speed_b"
+        self._attr_name = f"{DEFAULT_NAME_KO} B 속도"
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        return "km/h"
+
+    @property
+    def native_value(self) -> float | None:
+        v = self.mgr.b_speed_kmh
+        return None if v is None else _round1(v)
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:

@@ -1,3 +1,13 @@
+"""
+Config and options flow for the Member Adjacency component.
+
+This flow allows a user to configure two location-providing entities and
+adjust various thresholds affecting proximity detection.  It has been
+extended to include configuration for movement filtering and delayed
+update resynchronisation.  These settings allow false positives to be
+reduced when GPS updates arrive late or jump unexpectedly.
+"""
+
 from __future__ import annotations
 
 from typing import Any
@@ -18,11 +28,23 @@ from .const import (
     CONF_DEBOUNCE_SECONDS,
     CONF_MAX_ACCURACY_M,
     CONF_FORCE_METERS,
+    CONF_RESYNC_SILENCE_S,
+    CONF_RESYNC_HOLD_S,
+    CONF_MAX_SPEED_KMH,
+    CONF_MIN_UPDATES_FOR_PROXIMITY,
+    CONF_UPDATE_WINDOW_S,
+    CONF_REQUIRE_RELIABLE_PROXIMITY,
     DEFAULT_ENTRY_THRESHOLD_M,
     DEFAULT_EXIT_THRESHOLD_M,
     DEFAULT_DEBOUNCE_SECONDS,
     DEFAULT_MAX_ACCURACY_M,
     DEFAULT_FORCE_METERS,
+    DEFAULT_RESYNC_SILENCE_S,
+    DEFAULT_RESYNC_HOLD_S,
+    DEFAULT_MAX_SPEED_KMH,
+    DEFAULT_MIN_UPDATES_FOR_PROXIMITY,
+    DEFAULT_UPDATE_WINDOW_S,
+    DEFAULT_REQUIRE_RELIABLE_PROXIMITY,
     DOMAIN,
     GEO_SUFFIX,
 )
@@ -114,9 +136,11 @@ def _group_order(group: str) -> int:
 
 def _candidate_entities_grouped(hass: HomeAssistant) -> list[dict[str, str]]:
     """
-    - 위치(좌표) 추출 가능한 엔티티만 노출
-    - 유형별 정렬 + 유형 내 가나다(라벨) 정렬
-    - options format: [{"value": entity_id, "label": "Geocoded · 1Bobby (sensor.xxx)"}]
+    Return a list of selectable location entities grouped and sorted for display.
+
+    - Only entities with coordinates are included.
+    - Sorted by group and then by a friendly label.
+    - Each option is a dict with 'value' and 'label'.
     """
     entities: list[str] = []
 
@@ -133,7 +157,7 @@ def _candidate_entities_grouped(hass: HomeAssistant) -> list[dict[str, str]]:
     rows: list[tuple[int, str, str, str]] = []
     for eid in unique:
         g = _group_name(eid)
-        base_label = _label_for_entity(hass, eid)  # 가나다 정렬 키
+        base_label = _label_for_entity(hass, eid)  # label used for sorting within group
         label = f"{g} · {base_label}"
         rows.append((_group_order(g), base_label, label, eid))
 
@@ -196,6 +220,7 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors[CONF_EXIT_THRESHOLD_M] = "exit_lt_entry"
 
             if not errors:
+                # Use a stable unique_id so the same two entities cannot be configured multiple times
                 pair = "__".join(sorted([a, b]))
                 await self.async_set_unique_id(pair)
                 self._abort_if_unique_id_configured()
@@ -213,6 +238,7 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
         )
 
+        # For initial setup ask the user for all proximity and movement settings
         schema = vol.Schema(
             {
                 vol.Required(CONF_ENTITY_A, default=default_a): entity_sel,
@@ -230,6 +256,22 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     0, 10_000, 10, "m"
                 ),
                 vol.Required(CONF_FORCE_METERS, default=DEFAULT_FORCE_METERS): selector.BooleanSelector(),
+                vol.Required(CONF_RESYNC_SILENCE_S, default=DEFAULT_RESYNC_SILENCE_S): _num_box(
+                    0, 86_400, 60, "s"
+                ),
+                vol.Required(CONF_RESYNC_HOLD_S, default=DEFAULT_RESYNC_HOLD_S): _num_box(
+                    0, 600, 5, "s"
+                ),
+                vol.Required(CONF_MAX_SPEED_KMH, default=DEFAULT_MAX_SPEED_KMH): _num_box(
+                    0, 1_000, 10, "km/h"
+                ),
+                vol.Required(CONF_MIN_UPDATES_FOR_PROXIMITY, default=DEFAULT_MIN_UPDATES_FOR_PROXIMITY): _num_slider(
+                    1, 10, 1
+                ),
+                vol.Required(CONF_UPDATE_WINDOW_S, default=DEFAULT_UPDATE_WINDOW_S): _num_box(
+                    60, 1800, 30, "s"
+                ),
+                vol.Required(CONF_REQUIRE_RELIABLE_PROXIMITY, default=DEFAULT_REQUIRE_RELIABLE_PROXIMITY): selector.BooleanSelector(),
             }
         )
 
@@ -246,6 +288,7 @@ class MemberAdjacencyOptionsFlow(config_entries.OptionsFlow):
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         errors: dict[str, str] = {}
+        # Merge data and options so we always have a baseline for defaults
         data = {**self._entry.data, **self._entry.options}
 
         if user_input is not None:
@@ -256,9 +299,7 @@ class MemberAdjacencyOptionsFlow(config_entries.OptionsFlow):
             if not errors:
                 return self.async_create_entry(title="", data=user_input)
 
-        # ✅ Options 화면 레이아웃 개선 포인트:
-        # - vol.Optional -> vol.Required 로 변경해서 체크박스가 뜨지 않게 함
-        # - debounce는 slider로 통일 (0이면 즉시)
+        # Define the options form with all configurable values
         schema = vol.Schema(
             {
                 vol.Required(CONF_ENTRY_THRESHOLD_M, default=data.get(CONF_ENTRY_THRESHOLD_M, DEFAULT_ENTRY_THRESHOLD_M)): _num_box(
@@ -274,6 +315,22 @@ class MemberAdjacencyOptionsFlow(config_entries.OptionsFlow):
                     0, 10_000, 10, "m"
                 ),
                 vol.Required(CONF_FORCE_METERS, default=data.get(CONF_FORCE_METERS, DEFAULT_FORCE_METERS)): selector.BooleanSelector(),
+                vol.Required(CONF_RESYNC_SILENCE_S, default=data.get(CONF_RESYNC_SILENCE_S, DEFAULT_RESYNC_SILENCE_S)): _num_box(
+                    0, 86_400, 60, "s"
+                ),
+                vol.Required(CONF_RESYNC_HOLD_S, default=data.get(CONF_RESYNC_HOLD_S, DEFAULT_RESYNC_HOLD_S)): _num_box(
+                    0, 600, 5, "s"
+                ),
+                vol.Required(CONF_MAX_SPEED_KMH, default=data.get(CONF_MAX_SPEED_KMH, DEFAULT_MAX_SPEED_KMH)): _num_box(
+                    0, 1_000, 10, "km/h"
+                ),
+                vol.Required(CONF_MIN_UPDATES_FOR_PROXIMITY, default=data.get(CONF_MIN_UPDATES_FOR_PROXIMITY, DEFAULT_MIN_UPDATES_FOR_PROXIMITY)): _num_slider(
+                    1, 10, 1
+                ),
+                vol.Required(CONF_UPDATE_WINDOW_S, default=data.get(CONF_UPDATE_WINDOW_S, DEFAULT_UPDATE_WINDOW_S)): _num_box(
+                    60, 1800, 30, "s"
+                ),
+                vol.Required(CONF_REQUIRE_RELIABLE_PROXIMITY, default=data.get(CONF_REQUIRE_RELIABLE_PROXIMITY, DEFAULT_REQUIRE_RELIABLE_PROXIMITY)): selector.BooleanSelector(),
             }
         )
         return self.async_show_form(step_id="init", data_schema=schema, errors=errors)

@@ -1,3 +1,12 @@
+"""
+Binary sensor platform for the Member Adjacency component.
+
+This binary sensor reports whether the two tracked entities are currently
+within the configured proximity threshold.  Additional attributes expose
+the underlying configuration, timing, movement and resync state to aid
+in building automations.
+"""
+
 from __future__ import annotations
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
@@ -10,13 +19,16 @@ from .manager import AdjacencyManager
 
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> None:
+    """Set up the Member Adjacency binary sensor for a config entry."""
     mgr: AdjacencyManager = hass.data[DOMAIN][entry.entry_id]
 
     ent_reg = er.async_get(hass)
     pair_key = mgr.pair_key
 
     ent_reg.async_get_or_create(
-        "binary_sensor", DOMAIN, f"{entry.entry_id}_proximity",
+        "binary_sensor",
+        DOMAIN,
+        f"{entry.entry_id}_proximity",
         suggested_object_id=f"member_adjacency_{pair_key}_proximity",
         config_entry=entry,
     )
@@ -25,6 +37,8 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> N
 
 
 class MemberAdjacencyProximityBinary(BinarySensorEntity):
+    """Binary sensor indicating if the two entities are in proximity."""
+
     _attr_should_poll = False
     _attr_icon = "mdi:map-marker-circle"
 
@@ -57,6 +71,18 @@ class MemberAdjacencyProximityBinary(BinarySensorEntity):
             "entity_b": self.mgr.entity_b,
             "entry_threshold_m": self.mgr.entry_th,
             "exit_threshold_m": self.mgr.exit_th,
+            "debounce_seconds": self.mgr.debounce_s,
+            "max_accuracy_m": self.mgr.max_acc_m,
+            "force_meters": self.mgr.force_meters,
+            # movement/resync configuration
+            "resync_silence_s": self.mgr.resync_silence_s,
+            "resync_hold_s": self.mgr.resync_hold_s,
+            "max_speed_kmh": self.mgr.max_speed_kmh,
+            # reliability configuration
+            "min_updates_for_proximity": self.mgr.min_updates_for_proximity,
+            "update_window_s": self.mgr.update_window_s,
+            "require_reliable_proximity": self.mgr.require_reliable_proximity,
+
             "data_valid": self.mgr.data.data_valid,
             "last_valid_updated": self.mgr.data.last_valid_updated,
             "last_error": self.mgr.data.last_error,
@@ -66,4 +92,17 @@ class MemberAdjacencyProximityBinary(BinarySensorEntity):
             "last_changed": self.mgr.data.last_changed,
             "last_entered": self.mgr.data.last_entered,
             "last_left": self.mgr.data.last_left,
+            # movement tracking attributes
+            "speed_a_kmh": None if self.mgr.a_speed_kmh is None else round(self.mgr.a_speed_kmh, 1),
+            "speed_b_kmh": None if self.mgr.b_speed_kmh is None else round(self.mgr.b_speed_kmh, 1),
+            "a_last_fix": self.mgr.a_last_fix.isoformat() if self.mgr.a_last_fix else None,
+            "b_last_fix": self.mgr.b_last_fix.isoformat() if self.mgr.b_last_fix else None,
+            "a_resync_until": self.mgr.a_resync_until.isoformat() if self.mgr.a_resync_until else None,
+            "b_resync_until": self.mgr.b_resync_until.isoformat() if self.mgr.b_resync_until else None,
+            # reliability state attributes
+            "proximity_reliable": self.mgr.data.proximity_reliable,
+            "unreliable_reason": self.mgr.data.unreliable_reason,
+            "a_updates_in_window": self.mgr.data.a_updates_in_window,
+            "b_updates_in_window": self.mgr.data.b_updates_in_window,
+            "convergence_speed_kmh": None if self.mgr.data.convergence_speed_kmh is None else round(self.mgr.data.convergence_speed_kmh, 1),
         }
