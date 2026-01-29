@@ -12,7 +12,13 @@
           "exit_threshold_m": "Exit threshold (m) (>= : proximity OFF)",
           "debounce_seconds": "Debounce (seconds) (0=immediate)",
           "max_accuracy_m": "Max accuracy allowed (m) (0=ignore)",
-          "force_meters": "Force display to meters (stored unit is always meters)"
+          "force_meters": "Force display to meters (stored unit is always meters)",
+          "resync_silence_s": "Resync detection silence (seconds)",
+          "resync_hold_s": "Hold time after resync (seconds)",
+          "max_speed_kmh": "Max allowed speed (km/h)",
+          "min_updates_for_proximity": "Min updates for reliable proximity",
+          "update_window_s": "Update count window (seconds)",
+          "require_reliable_proximity": "Only fire events on reliable proximity"
         }
       }
     },
@@ -35,7 +41,13 @@
           "exit_threshold_m": "Exit threshold (m) (>= : proximity OFF)",
           "debounce_seconds": "Debounce (seconds) (0=immediate)",
           "max_accuracy_m": "Max accuracy allowed (m) (0=ignore)",
-          "force_meters": "Force display to meters (stored unit is always meters)"
+          "force_meters": "Force display to meters (stored unit is always meters)",
+          "resync_silence_s": "Resync detection silence (seconds)",
+          "resync_hold_s": "Hold time after resync (seconds)",
+          "max_speed_kmh": "Max allowed speed (km/h)",
+          "min_updates_for_proximity": "Min updates for reliable proximity",
+          "update_window_s": "Update count window (seconds)",
+          "require_reliable_proximity": "Only fire events on reliable proximity"
         }
       }
     }

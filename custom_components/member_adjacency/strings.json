@@ -12,7 +12,13 @@
           "exit_threshold_m": "이탈 임계값 (m) (이상: 근접 OFF)",
           "debounce_seconds": "디바운스 (초) (0=즉시)",
           "max_accuracy_m": "최대 허용 정확도 (m) (0=무시)",
-          "force_meters": "표시 단위를 항상 m로 고정 (저장은 항상 m)"
+          "force_meters": "표시 단위를 항상 m로 고정 (저장은 항상 m)",
+          "resync_silence_s": "재동기화 감지 침묵 시간 (초)",
+          "resync_hold_s": "재동기화 후 대기 시간 (초)",
+          "max_speed_kmh": "최대 허용 속도 (km/h)",
+          "min_updates_for_proximity": "신뢰 가능 근접에 필요한 최소 업데이트 수",
+          "update_window_s": "업데이트 카운트 윈도우 (초)",
+          "require_reliable_proximity": "신뢰 가능한 근접만 이벤트 발생"
         }
       }
     },
@@ -35,7 +41,13 @@
           "exit_threshold_m": "이탈 임계값 (m) (이상: 근접 OFF)",
           "debounce_seconds": "디바운스 (초) (0=즉시)",
           "max_accuracy_m": "최대 허용 정확도 (m) (0=무시)",
-          "force_meters": "표시 단위를 항상 m로 고정 (저장은 항상 m)"
+          "force_meters": "표시 단위를 항상 m로 고정 (저장은 항상 m)",
+          "resync_silence_s": "재동기화 감지 침묵 시간 (초)",
+          "resync_hold_s": "재동기화 후 대기 시간 (초)",
+          "max_speed_kmh": "최대 허용 속도 (km/h)",
+          "min_updates_for_proximity": "신뢰 가능 근접에 필요한 최소 업데이트 수",
+          "update_window_s": "업데이트 카운트 윈도우 (초)",
+          "require_reliable_proximity": "신뢰 가능한 근접만 이벤트 발생"
         }
       }
     }
