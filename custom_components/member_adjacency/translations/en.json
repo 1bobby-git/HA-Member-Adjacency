@@ -6,19 +6,34 @@
         "title": "Adjacency Sensor",
         "description": "Configure a base and tracker. Proximity is triggered when tracker approaches the base.",
         "data": {
-          "base_entity": "Base entity (home, office, etc.)",
-          "tracker_entity": "Tracker entity (me, my phone, etc.)",
-          "entry_threshold_m": "Entry threshold (m) (<= : proximity ON)",
-          "exit_threshold_m": "Exit threshold (m) (>= : proximity OFF)",
-          "debounce_seconds": "Debounce (seconds) (0=immediate)",
-          "max_accuracy_m": "Max accuracy allowed (m) (0=ignore)",
-          "force_meters": "Force display to meters (stored unit is always meters)",
+          "base_entity": "Base entity",
+          "tracker_entity": "Tracker entity",
+          "entry_threshold_m": "Entry threshold (m)",
+          "exit_threshold_m": "Exit threshold (m)",
+          "debounce_seconds": "Debounce (seconds)",
+          "max_accuracy_m": "Max accuracy allowed (m)",
+          "force_meters": "Force display to meters",
           "resync_silence_s": "Resync detection silence (seconds)",
           "resync_hold_s": "Hold time after resync (seconds)",
           "max_speed_kmh": "Max allowed speed (km/h)",
           "min_updates_for_proximity": "Min updates for reliable proximity",
           "update_window_s": "Update count window (seconds)",
           "require_reliable_proximity": "Only fire events on reliable proximity"
+        },
+        "data_description": {
+          "base_entity": "Home, office, etc. - the reference point",
+          "tracker_entity": "Me, my phone, etc. - the entity to track",
+          "entry_threshold_m": "Distance <= this triggers proximity ON",
+          "exit_threshold_m": "Distance >= this triggers proximity OFF",
+          "debounce_seconds": "0=immediate update",
+          "max_accuracy_m": "0=ignore accuracy",
+          "force_meters": "Stored unit is always meters",
+          "resync_silence_s": "No updates for this duration triggers resync detection",
+          "resync_hold_s": "Ignore updates for this duration after resync",
+          "max_speed_kmh": "Speed exceeding this is considered invalid",
+          "min_updates_for_proximity": "Minimum update count for reliable proximity determination",
+          "update_window_s": "Time window for counting updates",
+          "require_reliable_proximity": "Unreliable data fires separate event"
         }
       }
     },
@@ -37,17 +52,30 @@
         "title": "Options",
         "description": "Change thresholds/accuracy/debounce/force display unit.",
         "data": {
-          "entry_threshold_m": "Entry threshold (m) (<= : proximity ON)",
-          "exit_threshold_m": "Exit threshold (m) (>= : proximity OFF)",
-          "debounce_seconds": "Debounce (seconds) (0=immediate)",
-          "max_accuracy_m": "Max accuracy allowed (m) (0=ignore)",
-          "force_meters": "Force display to meters (stored unit is always meters)",
+          "entry_threshold_m": "Entry threshold (m)",
+          "exit_threshold_m": "Exit threshold (m)",
+          "debounce_seconds": "Debounce (seconds)",
+          "max_accuracy_m": "Max accuracy allowed (m)",
+          "force_meters": "Force display to meters",
           "resync_silence_s": "Resync detection silence (seconds)",
           "resync_hold_s": "Hold time after resync (seconds)",
           "max_speed_kmh": "Max allowed speed (km/h)",
           "min_updates_for_proximity": "Min updates for reliable proximity",
           "update_window_s": "Update count window (seconds)",
           "require_reliable_proximity": "Only fire events on reliable proximity"
+        },
+        "data_description": {
+          "entry_threshold_m": "Distance <= this triggers proximity ON",
+          "exit_threshold_m": "Distance >= this triggers proximity OFF",
+          "debounce_seconds": "0=immediate update",
+          "max_accuracy_m": "0=ignore accuracy",
+          "force_meters": "Stored unit is always meters",
+          "resync_silence_s": "No updates for this duration triggers resync detection",
+          "resync_hold_s": "Ignore updates for this duration after resync",
+          "max_speed_kmh": "Speed exceeding this is considered invalid",
+          "min_updates_for_proximity": "Minimum update count for reliable proximity determination",
+          "update_window_s": "Time window for counting updates",
+          "require_reliable_proximity": "Unreliable data fires separate event"
         }
       }
     }

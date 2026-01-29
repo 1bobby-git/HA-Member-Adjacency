@@ -48,7 +48,7 @@ DEFAULT_FORCE_METERS = False
 # Defaults for movement filtering
 DEFAULT_RESYNC_SILENCE_S = 600  # 10 minutes of silence marks resync
 DEFAULT_RESYNC_HOLD_S = 60      # ignore updates for 60 seconds after resync
-DEFAULT_MAX_SPEED_KMH = 150.0    # any speed over 150 km/h is considered invalid
+DEFAULT_MAX_SPEED_KMH = 150    # any speed over 150 km/h is considered invalid
 DEFAULT_MIN_UPDATES_FOR_PROXIMITY = 3  # both sides need at least 3 updates in window (conservative)
 DEFAULT_UPDATE_WINDOW_S = 300    # 5 minute window for counting updates
 DEFAULT_REQUIRE_RELIABLE_PROXIMITY = True  # safe default: only fire enter event if reliable
