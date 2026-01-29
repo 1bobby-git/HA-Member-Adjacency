@@ -244,18 +244,18 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
                 return self.async_create_entry(title=title, data=data_to_store)
 
-        entity_sel = selector.SelectSelector(
-            selector.SelectSelectorConfig(
-                options=options,
-                mode=selector.SelectSelectorMode.DROPDOWN,
+        # Use EntitySelector for better HA compatibility
+        entity_sel = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain=["sensor", "device_tracker", "person", "zone"],
             )
         )
 
         # For initial setup ask the user for all proximity and movement settings
         schema = vol.Schema(
             {
-                vol.Required(CONF_BASE_ENTITY, default=default_a): entity_sel,
-                vol.Required(CONF_TRACKER_ENTITY, default=default_b): entity_sel,
+                vol.Required(CONF_BASE_ENTITY): entity_sel,
+                vol.Required(CONF_TRACKER_ENTITY): entity_sel,
                 vol.Required(CONF_ENTRY_THRESHOLD_M, default=DEFAULT_ENTRY_THRESHOLD_M): _num_box(
                     0, 1_000_000, 10, "m"
                 ),
