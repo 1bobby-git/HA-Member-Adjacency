@@ -23,6 +23,8 @@ from homeassistant.helpers import device_registry as dr
 from .const import (
     CONF_ENTITY_A,
     CONF_ENTITY_B,
+    CONF_BASE_ENTITY,
+    CONF_TRACKER_ENTITY,
     CONF_ENTRY_THRESHOLD_M,
     CONF_EXIT_THRESHOLD_M,
     CONF_DEBOUNCE_SECONDS,
@@ -202,17 +204,18 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         default_b = candidates[1] if len(candidates) >= 2 else None
 
         if user_input is not None:
-            a = user_input[CONF_ENTITY_A]
-            b = user_input[CONF_ENTITY_B]
+            # Support both new (base/tracker) and legacy (entity_a/entity_b) keys
+            a = user_input.get(CONF_BASE_ENTITY) or user_input.get(CONF_ENTITY_A)
+            b = user_input.get(CONF_TRACKER_ENTITY) or user_input.get(CONF_ENTITY_B)
 
             if a == b:
-                errors[CONF_ENTITY_B] = "same_entity"
+                errors[CONF_TRACKER_ENTITY] = "same_entity"
 
             if not errors:
                 if _try_get_coords_from_state(self.hass.states.get(a)) is None:
-                    errors[CONF_ENTITY_A] = "invalid_entity"
+                    errors[CONF_BASE_ENTITY] = "invalid_entity"
                 if _try_get_coords_from_state(self.hass.states.get(b)) is None:
-                    errors[CONF_ENTITY_B] = "invalid_entity"
+                    errors[CONF_TRACKER_ENTITY] = "invalid_entity"
 
             entry_th = int(user_input[CONF_ENTRY_THRESHOLD_M])
             exit_th = int(user_input[CONF_EXIT_THRESHOLD_M])
@@ -225,11 +228,21 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 await self.async_set_unique_id(pair)
                 self._abort_if_unique_id_configured()
 
-                a_name = _device_name_for_entity(self.hass, a) or _friendly_or_entity(self.hass, a)
-                b_name = _device_name_for_entity(self.hass, b) or _friendly_or_entity(self.hass, b)
-                title = f"{a_name} ↔ {b_name}"
+                base_name = _device_name_for_entity(self.hass, a) or _friendly_or_entity(self.hass, a)
+                tracker_name = _device_name_for_entity(self.hass, b) or _friendly_or_entity(self.hass, b)
+                title = f"{tracker_name} → {base_name}"
 
-                return self.async_create_entry(title=title, data=user_input)
+                # Store with new semantic keys (base/tracker), plus legacy keys for compatibility
+                data_to_store = {
+                    CONF_BASE_ENTITY: a,
+                    CONF_TRACKER_ENTITY: b,
+                    # Legacy keys for backward compatibility
+                    CONF_ENTITY_A: a,
+                    CONF_ENTITY_B: b,
+                    **{k: v for k, v in user_input.items() if k not in (CONF_BASE_ENTITY, CONF_TRACKER_ENTITY, CONF_ENTITY_A, CONF_ENTITY_B)},
+                }
+
+                return self.async_create_entry(title=title, data=data_to_store)
 
         entity_sel = selector.SelectSelector(
             selector.SelectSelectorConfig(
@@ -241,8 +254,8 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # For initial setup ask the user for all proximity and movement settings
         schema = vol.Schema(
             {
-                vol.Required(CONF_ENTITY_A, default=default_a): entity_sel,
-                vol.Required(CONF_ENTITY_B, default=default_b): entity_sel,
+                vol.Required(CONF_BASE_ENTITY, default=default_a): entity_sel,
+                vol.Required(CONF_TRACKER_ENTITY, default=default_b): entity_sel,
                 vol.Required(CONF_ENTRY_THRESHOLD_M, default=DEFAULT_ENTRY_THRESHOLD_M): _num_box(
                     0, 1_000_000, 10, "m"
                 ),

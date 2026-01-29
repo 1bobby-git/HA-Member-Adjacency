@@ -4,10 +4,10 @@
     "step": {
       "user": {
         "title": "Adjacency Sensor",
-        "description": "Configure one A-B pair. Add again to create another pair like A-C.",
+        "description": "Configure a base and tracker. Proximity is triggered when tracker approaches the base.",
         "data": {
-          "entity_a": "Entity A",
-          "entity_b": "Entity B",
+          "base_entity": "Base entity (home, office, etc.)",
+          "tracker_entity": "Tracker entity (me, my phone, etc.)",
           "entry_threshold_m": "Entry threshold (m) (<= : proximity ON)",
           "exit_threshold_m": "Exit threshold (m) (>= : proximity OFF)",
           "debounce_seconds": "Debounce (seconds) (0=immediate)",
@@ -24,7 +24,7 @@
     },
     "error": {
       "invalid_entity": "Selected entity does not expose coordinates (Location or latitude/longitude).",
-      "same_entity": "Entity A and B must be different.",
+      "same_entity": "Base and tracker must be different entities.",
       "exit_lt_entry": "Exit threshold must be >= entry threshold."
     },
     "abort": {

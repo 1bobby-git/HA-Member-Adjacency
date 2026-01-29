@@ -40,6 +40,8 @@ from .const import (
     CONF_DEBOUNCE_SECONDS,
     CONF_ENTITY_A,
     CONF_ENTITY_B,
+    CONF_BASE_ENTITY,
+    CONF_TRACKER_ENTITY,
     CONF_ENTRY_THRESHOLD_M,
     CONF_EXIT_THRESHOLD_M,
     CONF_FORCE_METERS,
@@ -220,9 +222,13 @@ class AdjacencyManager:
         self.hass = hass
         self.entry = entry
 
-        # Entities this manager will track
-        self.entity_a: str = _get(entry, CONF_ENTITY_A, "")
-        self.entity_b: str = _get(entry, CONF_ENTITY_B, "")
+        # Support both new (base/tracker) and legacy (entity_a/entity_b) config keys
+        self.base_entity: str = _get(entry, CONF_BASE_ENTITY, "") or _get(entry, CONF_ENTITY_A, "")
+        self.tracker_entity: str = _get(entry, CONF_TRACKER_ENTITY, "") or _get(entry, CONF_ENTITY_B, "")
+
+        # Legacy aliases for internal compatibility
+        self.entity_a = self.base_entity
+        self.entity_b = self.tracker_entity
 
         # Hysteresis thresholds, debounce and accuracy filtering
         self.entry_th: int = int(_get(entry, CONF_ENTRY_THRESHOLD_M, DEFAULT_ENTRY_THRESHOLD_M))
@@ -293,8 +299,16 @@ class AdjacencyManager:
                 return dev.name_by_user or dev.name or self._fallback_name(entity_id)
         return self._fallback_name(entity_id)
 
+    def get_base_name(self) -> str:
+        """Get friendly name for base entity (기준점)."""
+        return self._resolve_device_name(self.base_entity)
+
+    def get_tracker_name(self) -> str:
+        """Get friendly name for tracker entity (추적 대상)."""
+        return self._resolve_device_name(self.tracker_entity)
+
     def device_name(self) -> str:
-        return f"{self._resolve_device_name(self.entity_a)} ↔ {self._resolve_device_name(self.entity_b)}"
+        return f"{self.get_tracker_name()} → {self.get_base_name()}"
 
     def device_info(self) -> dict[str, Any]:
         return {

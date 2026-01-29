@@ -130,8 +130,33 @@ class _Base(SensorEntity):
             display_text = dt
 
         return {
-            "entity_a": self.mgr.entity_a,
-            "entity_b": self.mgr.entity_b,
+            # New semantic naming (기준점/추적대상)
+            "base_entity": self.mgr.base_entity,
+            "tracker_entity": self.mgr.tracker_entity,
+            "base_speed_kmh": None if self.mgr.a_speed_kmh is None else _round1(self.mgr.a_speed_kmh),
+            "tracker_speed_kmh": None if self.mgr.b_speed_kmh is None else _round1(self.mgr.b_speed_kmh),
+            "base_accuracy_m": None if self.mgr.data.accuracy_a is None else _round1(self.mgr.data.accuracy_a),
+            "tracker_accuracy_m": None if self.mgr.data.accuracy_b is None else _round1(self.mgr.data.accuracy_b),
+            "base_last_update": self.mgr.a_last_fix.isoformat() if self.mgr.a_last_fix else None,
+            "tracker_last_update": self.mgr.b_last_fix.isoformat() if self.mgr.b_last_fix else None,
+            "base_updates_recent": self.mgr.data.a_updates_in_window,
+            "tracker_updates_recent": self.mgr.data.b_updates_in_window,
+
+            # Legacy aliases (for backward compatibility)
+            "entity_a": self.mgr.base_entity,
+            "entity_b": self.mgr.tracker_entity,
+            "speed_a_kmh": None if self.mgr.a_speed_kmh is None else _round1(self.mgr.a_speed_kmh),
+            "speed_b_kmh": None if self.mgr.b_speed_kmh is None else _round1(self.mgr.b_speed_kmh),
+            "accuracy_a": None if self.mgr.data.accuracy_a is None else _round1(self.mgr.data.accuracy_a),
+            "accuracy_b": None if self.mgr.data.accuracy_b is None else _round1(self.mgr.data.accuracy_b),
+            "a_last_fix": self.mgr.a_last_fix.isoformat() if self.mgr.a_last_fix else None,
+            "b_last_fix": self.mgr.b_last_fix.isoformat() if self.mgr.b_last_fix else None,
+            "a_resync_until": self.mgr.a_resync_until.isoformat() if self.mgr.a_resync_until else None,
+            "b_resync_until": self.mgr.b_resync_until.isoformat() if self.mgr.b_resync_until else None,
+            "a_updates_in_window": self.mgr.data.a_updates_in_window,
+            "b_updates_in_window": self.mgr.data.b_updates_in_window,
+
+            # Configuration
             "entry_threshold_m": self.mgr.entry_th,
             "exit_threshold_m": self.mgr.exit_th,
             "debounce_seconds": self.mgr.debounce_s,
@@ -144,11 +169,10 @@ class _Base(SensorEntity):
             "min_updates_for_proximity": self.mgr.min_updates_for_proximity,
             "update_window_s": self.mgr.update_window_s,
 
+            # State
             "data_valid": self.mgr.data.data_valid,
             "last_valid_updated": self.mgr.data.last_valid_updated,
             "last_error": self.mgr.data.last_error,
-            "accuracy_a": None if self.mgr.data.accuracy_a is None else _round1(self.mgr.data.accuracy_a),
-            "accuracy_b": None if self.mgr.data.accuracy_b is None else _round1(self.mgr.data.accuracy_b),
 
             # raw distance values
             "distance_m": None if d_m is None else _round1(d_m),
@@ -159,19 +183,9 @@ class _Base(SensorEntity):
             "display_unit": display_unit,
             "display_text": display_text,
 
-            # movement tracking
-            "speed_a_kmh": None if self.mgr.a_speed_kmh is None else _round1(self.mgr.a_speed_kmh),
-            "speed_b_kmh": None if self.mgr.b_speed_kmh is None else _round1(self.mgr.b_speed_kmh),
-            "a_last_fix": self.mgr.a_last_fix.isoformat() if self.mgr.a_last_fix else None,
-            "b_last_fix": self.mgr.b_last_fix.isoformat() if self.mgr.b_last_fix else None,
-            "a_resync_until": self.mgr.a_resync_until.isoformat() if self.mgr.a_resync_until else None,
-            "b_resync_until": self.mgr.b_resync_until.isoformat() if self.mgr.b_resync_until else None,
-
             # 신뢰도 정보
             "proximity_reliable": self.mgr.data.proximity_reliable,
             "unreliable_reason": self.mgr.data.unreliable_reason,
-            "a_updates_in_window": self.mgr.data.a_updates_in_window,
-            "b_updates_in_window": self.mgr.data.b_updates_in_window,
             "convergence_speed_kmh": None if self.mgr.data.convergence_speed_kmh is None else _round1(self.mgr.data.convergence_speed_kmh),
 
             "bucket": self.mgr.data.bucket,
@@ -195,7 +209,8 @@ class MemberAdjacencyDistanceSensor(_Base):
     def __init__(self, mgr: AdjacencyManager) -> None:
         super().__init__(mgr)
         self._attr_unique_id = f"{mgr.entry.entry_id}_distance"
-        self._attr_name = f"{DEFAULT_NAME_KO} 거리"
+        # Use actual entity names: "바비 → 집 거리"
+        self._attr_name = f"{mgr.get_tracker_name()} → {mgr.get_base_name()} 거리"
 
     @property
     def native_unit_of_measurement(self) -> str | None:
@@ -222,7 +237,7 @@ class MemberAdjacencyBucketSensor(_Base):
     def __init__(self, mgr: AdjacencyManager) -> None:
         super().__init__(mgr)
         self._attr_unique_id = f"{mgr.entry.entry_id}_bucket"
-        self._attr_name = f"{DEFAULT_NAME_KO} 구간"
+        self._attr_name = f"{mgr.get_tracker_name()} → {mgr.get_base_name()} 구간"
 
     @property
     def native_value(self) -> str | None:
@@ -241,7 +256,7 @@ class MemberAdjacencyProximityDurationSensor(_Base):
     def __init__(self, mgr: AdjacencyManager) -> None:
         super().__init__(mgr)
         self._attr_unique_id = f"{mgr.entry.entry_id}_proximity_duration"
-        self._attr_name = f"{DEFAULT_NAME_KO} 근접 지속시간"
+        self._attr_name = f"{mgr.get_tracker_name()} → {mgr.get_base_name()} 근접 지속시간"
 
     @property
     def native_value(self) -> str:
@@ -253,7 +268,7 @@ class MemberAdjacencyProximityDurationSensor(_Base):
 
 
 class MemberAdjacencySpeedASensor(_Base):
-    """Sensor reporting the estimated speed of entity A in km/h."""
+    """Sensor reporting the estimated speed of base entity (기준점) in km/h."""
 
     _attr_device_class = SensorDeviceClass.SPEED
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -262,7 +277,8 @@ class MemberAdjacencySpeedASensor(_Base):
     def __init__(self, mgr: AdjacencyManager) -> None:
         super().__init__(mgr)
         self._attr_unique_id = f"{mgr.entry.entry_id}_speed_a"
-        self._attr_name = f"{DEFAULT_NAME_KO} A 속도"
+        # Base entity speed
+        self._attr_name = f"{mgr.get_base_name()} 속도"
 
     @property
     def native_unit_of_measurement(self) -> str | None:
@@ -279,7 +295,7 @@ class MemberAdjacencySpeedASensor(_Base):
 
 
 class MemberAdjacencySpeedBSensor(_Base):
-    """Sensor reporting the estimated speed of entity B in km/h."""
+    """Sensor reporting the estimated speed of tracker entity (추적 대상) in km/h."""
 
     _attr_device_class = SensorDeviceClass.SPEED
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -288,7 +304,8 @@ class MemberAdjacencySpeedBSensor(_Base):
     def __init__(self, mgr: AdjacencyManager) -> None:
         super().__init__(mgr)
         self._attr_unique_id = f"{mgr.entry.entry_id}_speed_b"
-        self._attr_name = f"{DEFAULT_NAME_KO} B 속도"
+        # Tracker entity speed
+        self._attr_name = f"{mgr.get_tracker_name()} 속도"
 
     @property
     def native_unit_of_measurement(self) -> str | None:

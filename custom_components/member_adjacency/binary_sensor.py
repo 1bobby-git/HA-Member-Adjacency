@@ -45,7 +45,7 @@ class MemberAdjacencyProximityBinary(BinarySensorEntity):
     def __init__(self, mgr: AdjacencyManager) -> None:
         self.mgr = mgr
         self._attr_unique_id = f"{mgr.entry.entry_id}_proximity"
-        self._attr_name = f"{DEFAULT_NAME_KO} 근접"
+        self._attr_name = f"{mgr.get_tracker_name()} → {mgr.get_base_name()} 근접"
         self._unsub = None
 
     async def async_added_to_hass(self) -> None:
@@ -67,8 +67,29 @@ class MemberAdjacencyProximityBinary(BinarySensorEntity):
     @property
     def extra_state_attributes(self):
         return {
-            "entity_a": self.mgr.entity_a,
-            "entity_b": self.mgr.entity_b,
+            # New semantic naming (기준점/추적대상)
+            "base_entity": self.mgr.base_entity,
+            "tracker_entity": self.mgr.tracker_entity,
+            "base_speed_kmh": None if self.mgr.a_speed_kmh is None else round(self.mgr.a_speed_kmh, 1),
+            "tracker_speed_kmh": None if self.mgr.b_speed_kmh is None else round(self.mgr.b_speed_kmh, 1),
+            "base_last_update": self.mgr.a_last_fix.isoformat() if self.mgr.a_last_fix else None,
+            "tracker_last_update": self.mgr.b_last_fix.isoformat() if self.mgr.b_last_fix else None,
+            "base_updates_recent": self.mgr.data.a_updates_in_window,
+            "tracker_updates_recent": self.mgr.data.b_updates_in_window,
+
+            # Legacy aliases (for backward compatibility)
+            "entity_a": self.mgr.base_entity,
+            "entity_b": self.mgr.tracker_entity,
+            "speed_a_kmh": None if self.mgr.a_speed_kmh is None else round(self.mgr.a_speed_kmh, 1),
+            "speed_b_kmh": None if self.mgr.b_speed_kmh is None else round(self.mgr.b_speed_kmh, 1),
+            "a_last_fix": self.mgr.a_last_fix.isoformat() if self.mgr.a_last_fix else None,
+            "b_last_fix": self.mgr.b_last_fix.isoformat() if self.mgr.b_last_fix else None,
+            "a_resync_until": self.mgr.a_resync_until.isoformat() if self.mgr.a_resync_until else None,
+            "b_resync_until": self.mgr.b_resync_until.isoformat() if self.mgr.b_resync_until else None,
+            "a_updates_in_window": self.mgr.data.a_updates_in_window,
+            "b_updates_in_window": self.mgr.data.b_updates_in_window,
+
+            # Configuration
             "entry_threshold_m": self.mgr.entry_th,
             "exit_threshold_m": self.mgr.exit_th,
             "debounce_seconds": self.mgr.debounce_s,
@@ -83,6 +104,7 @@ class MemberAdjacencyProximityBinary(BinarySensorEntity):
             "update_window_s": self.mgr.update_window_s,
             "require_reliable_proximity": self.mgr.require_reliable_proximity,
 
+            # State
             "data_valid": self.mgr.data.data_valid,
             "last_valid_updated": self.mgr.data.last_valid_updated,
             "last_error": self.mgr.data.last_error,
@@ -92,17 +114,8 @@ class MemberAdjacencyProximityBinary(BinarySensorEntity):
             "last_changed": self.mgr.data.last_changed,
             "last_entered": self.mgr.data.last_entered,
             "last_left": self.mgr.data.last_left,
-            # movement tracking attributes
-            "speed_a_kmh": None if self.mgr.a_speed_kmh is None else round(self.mgr.a_speed_kmh, 1),
-            "speed_b_kmh": None if self.mgr.b_speed_kmh is None else round(self.mgr.b_speed_kmh, 1),
-            "a_last_fix": self.mgr.a_last_fix.isoformat() if self.mgr.a_last_fix else None,
-            "b_last_fix": self.mgr.b_last_fix.isoformat() if self.mgr.b_last_fix else None,
-            "a_resync_until": self.mgr.a_resync_until.isoformat() if self.mgr.a_resync_until else None,
-            "b_resync_until": self.mgr.b_resync_until.isoformat() if self.mgr.b_resync_until else None,
             # reliability state attributes
             "proximity_reliable": self.mgr.data.proximity_reliable,
             "unreliable_reason": self.mgr.data.unreliable_reason,
-            "a_updates_in_window": self.mgr.data.a_updates_in_window,
-            "b_updates_in_window": self.mgr.data.b_updates_in_window,
             "convergence_speed_kmh": None if self.mgr.data.convergence_speed_kmh is None else round(self.mgr.data.convergence_speed_kmh, 1),
         }

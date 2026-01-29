@@ -18,6 +18,10 @@ PLATFORMS: list[str] = ["sensor", "binary_sensor", "button"]
 CONF_ENTITY_A = "entity_a"
 CONF_ENTITY_B = "entity_b"
 
+# New semantic naming (기준점/추적대상)
+CONF_BASE_ENTITY = "base_entity"
+CONF_TRACKER_ENTITY = "tracker_entity"
+
 CONF_ENTRY_THRESHOLD_M = "entry_threshold_m"
 CONF_EXIT_THRESHOLD_M = "exit_threshold_m"
 CONF_DEBOUNCE_SECONDS = "debounce_seconds"
