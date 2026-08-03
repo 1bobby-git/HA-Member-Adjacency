@@ -1,5 +1,7 @@
 # 인접센서 (Member Adjacency Distance)
 
+
+> **Compatibility**: Home Assistant **2024.12+** 권장 (OptionsFlow / DeviceInfo / Coordinator API 정리 반영).
 두 개의 위치(좌표) 엔티티 사이 **거리 / 근접(Proximity)** 을 계산하는 Home Assistant 커스텀 통합입니다.
 주로 `mobile_app`의 `*_geocoded_location` 센서를 사용하지만, `device_tracker`, `person`, `zone` 등 **위치(위도/경도)가 포함된 엔티티**도 지원합니다.
 

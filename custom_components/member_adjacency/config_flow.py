@@ -15,6 +15,7 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 from homeassistant.helpers import entity_registry as er
@@ -117,7 +118,7 @@ def _label_for_entity(hass: HomeAssistant, entity_id: str) -> str:
     # Remove common suffixes for cleaner display
     for suffix in ("_geocoded_location", "_location", "_gps"):
         if obj_id.endswith(suffix):
-            obj_id = obj_id[:-len(suffix)]
+            obj_id = obj_id[: -len(suffix)]
             break
     return obj_id.replace("_", " ").title()
 
@@ -189,7 +190,7 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 2
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None):
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle the initial step."""
         errors: dict[str, str] = {}
 
@@ -304,22 +305,18 @@ class MemberAdjacencyConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self.async_show_form(step_id="user", data_schema=schema, errors=errors)
 
     @staticmethod
-    def async_get_options_flow(config_entry: config_entries.ConfigEntry):
+    def async_get_options_flow(config_entry: config_entries.ConfigEntry) -> config_entries.OptionsFlow:
         """Get the options flow for this handler."""
-        return MemberAdjacencyOptionsFlow(config_entry)
+        return MemberAdjacencyOptionsFlow()
 
 
 class MemberAdjacencyOptionsFlow(config_entries.OptionsFlow):
-    """Handle options flow for Member Adjacency."""
+    """Handle options flow for Member Adjacency (HA 2024.12+ self.config_entry)."""
 
-    def __init__(self, entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self._entry = entry
-
-    async def async_step_init(self, user_input: dict[str, Any] | None = None):
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage the options."""
         errors: dict[str, str] = {}
-        data = {**self._entry.data, **self._entry.options}
+        data = {**self.config_entry.data, **self.config_entry.options}
 
         if user_input is not None:
             # Extract advanced settings from nested section
