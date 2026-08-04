@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -9,6 +12,22 @@ from unittest.mock import patch
 
 
 release_alignment = importlib.import_module("scripts.check_release_alignment")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_PATH = REPO_ROOT / "scripts" / "check_release_alignment.py"
+
+
+def run_release_alignment_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    process_env = os.environ.copy()
+    process_env.update(env or {})
+    return subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), *args],
+        cwd=REPO_ROOT,
+        env=process_env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
 
 
 class ReleaseAlignmentTests(unittest.TestCase):
@@ -56,6 +75,38 @@ class ReleaseAlignmentTests(unittest.TestCase):
 
             with patch.dict(release_alignment.os.environ, {"GITHUB_REF_NAME": "v1.6.0"}, clear=True):
                 self.assertEqual(0, release_alignment.check_release_alignment(manifest))
+
+    def test_cli_matching_tag_exits_zero(self) -> None:
+        result = run_release_alignment_cli("v1.6.0")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("", result.stderr)
+
+    def test_cli_mismatched_tag_exits_one(self) -> None:
+        result = run_release_alignment_cli("v1.5.2")
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn(
+            "Release tag v1.5.2 does not match manifest version v1.6.0.",
+            result.stderr,
+        )
+
+    def test_cli_malformed_tag_exits_one(self) -> None:
+        result = run_release_alignment_cli("1.6.0")
+
+        self.assertEqual(1, result.returncode)
+        self.assertIn(
+            "Release tag 1.6.0 does not match manifest version v1.6.0.",
+            result.stderr,
+        )
+
+    def test_cli_missing_tag_exits_two_with_clear_stderr(self) -> None:
+        env = {"GITHUB_REF_NAME": "", "GITHUB_REF": ""}
+
+        result = run_release_alignment_cli(env=env)
+
+        self.assertEqual(2, result.returncode)
+        self.assertIn("No release tag was provided; expected v1.6.0.", result.stderr)
 
 
 if __name__ == "__main__":
