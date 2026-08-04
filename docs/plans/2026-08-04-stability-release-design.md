@@ -1,6 +1,6 @@
 # HA-Member-Adjacency 안정성 + 릴리스 정합성 설계 계획
-상태: Draft  
-작성일: 2026-08-04  
+상태: Draft
+작성일: 2026-08-04
 범위: docs-only 실행 지침 + 구현 계획 (코드 변경/커밋/푸시는 제외, 문서 산출물만 작성)
 
 ## 목적
@@ -8,9 +8,9 @@
 - HA/HACS 릴리스 파이프라인에서 manifest/tag/release 정합 불일치를 해소해 사용자 업데이트 노출을 보장한다.
 
 ## 승인된 개선안(고정)
-1. `async_request_source_update`에서 서비스 실패를 비파괴적으로 로깅하여 진단성 향상  
-2. `AdjacencyManager` 핵심 경로 회귀 테스트 도입 (리팩토링/기능 변경 방지)  
-3. `manifest.json` 버전/`git tag`/GitHub Release 정합성 점검 및 `v1.6.0` 공개 릴리스 준비  
+1. `async_request_source_update`에서 서비스 실패를 비파괴적으로 로깅하여 진단성 향상
+2. `AdjacencyManager` 핵심 경로 회귀 테스트 도입 (리팩토링/기능 변경 방지)
+3. `manifest.json` 버전/`git tag`/GitHub Release 정합성 점검 및 `v1.6.0` 공개 릴리스 준비
 
 ## 요구사항 제약
 - 소유 범위: 오직 아래 두 파일만 작성/수정
