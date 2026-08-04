@@ -16,12 +16,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "check_release_alignment.py"
 
 
-def run_release_alignment_cli(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def run_release_alignment_cli(
+    *args: str,
+    cwd: Path = REPO_ROOT,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     process_env = os.environ.copy()
     process_env.update(env or {})
     return subprocess.run(
         [sys.executable, str(SCRIPT_PATH), *args],
-        cwd=REPO_ROOT,
+        cwd=cwd,
         env=process_env,
         text=True,
         stdout=subprocess.PIPE,
@@ -78,6 +82,13 @@ class ReleaseAlignmentTests(unittest.TestCase):
 
     def test_cli_matching_tag_exits_zero(self) -> None:
         result = run_release_alignment_cli("v1.6.0")
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual("", result.stderr)
+
+    def test_cli_matching_tag_exits_zero_outside_repo_cwd(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_release_alignment_cli("v1.6.0", cwd=Path(tmp))
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("", result.stderr)

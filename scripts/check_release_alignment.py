@@ -7,7 +7,8 @@ import sys
 from pathlib import Path
 
 
-MANIFEST_PATH = Path("custom_components/member_adjacency/manifest.json")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MANIFEST_PATH = REPO_ROOT / "custom_components" / "member_adjacency" / "manifest.json"
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 TAG_RE = re.compile(r"^v(?P<version>\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)$")
 
