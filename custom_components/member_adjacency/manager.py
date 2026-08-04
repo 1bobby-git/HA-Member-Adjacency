@@ -21,13 +21,13 @@ proximity notifications when GPS coordinates jump or arrive out of order.
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.exceptions import ServiceNotFound
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.helpers import device_registry as dr
@@ -70,6 +70,9 @@ from .const import (
     EVENT_PROXIMITY_UPDATE,
     SIGNAL_UPDATE_PREFIX,
 )
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -389,6 +392,25 @@ class AdjacencyManager:
                 return str(dev_id)
         return None
 
+    def _log_source_update_failure(
+        self,
+        message: str,
+        *,
+        entity_id: str,
+        service: str,
+        error: Exception,
+    ) -> None:
+        _LOGGER.debug(
+            message,
+            extra={
+                "entity_id": entity_id,
+                "service": service,
+                "exception_type": type(error).__name__,
+                "exception_msg": str(error),
+            },
+            exc_info=True,
+        )
+
     async def async_request_source_update(self, entity_id: str) -> None:
         if not entity_id or entity_id.startswith("zone."):
             return
@@ -405,8 +427,13 @@ class AdjacencyManager:
                         blocking=True,
                     )
                     await asyncio.sleep(0.3)
-                except Exception:
-                    pass
+                except Exception as err:
+                    self._log_source_update_failure(
+                        "member_adjacency.request_location_update_failed",
+                        entity_id=entity_id,
+                        service=f"notify.{service}",
+                        error=err,
+                    )
 
         if self.hass.services.has_service("homeassistant", "update_entity"):
             try:
@@ -416,8 +443,13 @@ class AdjacencyManager:
                     {"entity_id": entity_id},
                     blocking=True,
                 )
-            except (ServiceNotFound, Exception):
-                pass
+            except Exception as err:
+                self._log_source_update_failure(
+                    "member_adjacency.update_entity_failed",
+                    entity_id=entity_id,
+                    service="homeassistant.update_entity",
+                    error=err,
+                )
 
     async def async_force_refresh_with_source_update(self) -> None:
         await self.async_request_source_update(self.entity_a)

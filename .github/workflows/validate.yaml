@@ -1,10 +1,33 @@
 name: Validate
 on:
   push:
+    branches:
+      - main
+    tags:
+      - "v*"
   pull_request:
   schedule:
     - cron: "0 0 * * *"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to compare with manifest version
+        required: true
 jobs:
+  unit-tests:
+    if: (github.event_name == 'push' && github.ref_type != 'tag') || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests
+        run: python -m unittest discover
+  release-alignment:
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release alignment
+        run: python scripts/check_release_alignment.py "${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}"
   validate-hacs:
     runs-on: ubuntu-latest
     steps:
