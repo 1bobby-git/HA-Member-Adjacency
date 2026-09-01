@@ -14,6 +14,7 @@ from unittest.mock import patch
 release_alignment = importlib.import_module("scripts.check_release_alignment")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "check_release_alignment.py"
+CURRENT_VERSION = "1.6.1"
 
 
 def run_release_alignment_cli(
@@ -81,14 +82,14 @@ class ReleaseAlignmentTests(unittest.TestCase):
                 self.assertEqual(0, release_alignment.check_release_alignment(manifest))
 
     def test_cli_matching_tag_exits_zero(self) -> None:
-        result = run_release_alignment_cli("v1.6.0")
+        result = run_release_alignment_cli(f"v{CURRENT_VERSION}")
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("", result.stderr)
 
     def test_cli_matching_tag_exits_zero_outside_repo_cwd(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            result = run_release_alignment_cli("v1.6.0", cwd=Path(tmp))
+            result = run_release_alignment_cli(f"v{CURRENT_VERSION}", cwd=Path(tmp))
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertEqual("", result.stderr)
@@ -98,16 +99,16 @@ class ReleaseAlignmentTests(unittest.TestCase):
 
         self.assertEqual(1, result.returncode)
         self.assertIn(
-            "Release tag v1.5.2 does not match manifest version v1.6.0.",
+            f"Release tag v1.5.2 does not match manifest version v{CURRENT_VERSION}.",
             result.stderr,
         )
 
     def test_cli_malformed_tag_exits_one(self) -> None:
-        result = run_release_alignment_cli("1.6.0")
+        result = run_release_alignment_cli(CURRENT_VERSION)
 
         self.assertEqual(1, result.returncode)
         self.assertIn(
-            "Release tag 1.6.0 does not match manifest version v1.6.0.",
+            f"Release tag {CURRENT_VERSION} does not match manifest version v{CURRENT_VERSION}.",
             result.stderr,
         )
 
@@ -117,7 +118,10 @@ class ReleaseAlignmentTests(unittest.TestCase):
         result = run_release_alignment_cli(env=env)
 
         self.assertEqual(2, result.returncode)
-        self.assertIn("No release tag was provided; expected v1.6.0.", result.stderr)
+        self.assertIn(
+            f"No release tag was provided; expected v{CURRENT_VERSION}.",
+            result.stderr,
+        )
 
 
 if __name__ == "__main__":
