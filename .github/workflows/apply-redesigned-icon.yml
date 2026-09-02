@@ -146,12 +146,17 @@ jobs:
           git tag -a "${tag}" -m "Member Adjacency ${tag}"
           git push origin "${tag}"
 
+          cat > /tmp/member-adjacency-release-notes.md <<'EOF'
+          - 인접센서의 기본 아이콘을 두 사람형 위치 핀과 근접 신호를 결합한 새 디자인으로 교체했습니다.
+          - 라이트·다크 테마용 256px·512px 투명 PNG를 통합 패키지 내부에 포함했습니다.
+          - 32px 축소 표시에서도 두 위치와 근접 관계가 구분되도록 대비와 실루엣을 개선했습니다.
+          - 센서 계산, 엔티티 ID, 이벤트 및 설정 동작은 변경하지 않았습니다.
+          EOF
+
+          sed -i 's/^          //' /tmp/member-adjacency-release-notes.md
           gh release create "${tag}" \
             --verify-tag \
             --title "Member Adjacency ${tag}" \
-            --notes "- 인접센서의 기본 아이콘을 두 사람형 위치 핀과 근접 신호를 결합한 새 디자인으로 교체했습니다.
-- 라이트·다크 테마용 256px·512px 투명 PNG를 통합 패키지 내부에 포함했습니다.
-- 32px 축소 표시에서도 두 위치와 근접 관계가 구분되도록 대비와 실루엣을 개선했습니다.
-- 센서 계산, 엔티티 ID, 이벤트 및 설정 동작은 변경하지 않았습니다."
+            --notes-file /tmp/member-adjacency-release-notes.md
 
           echo "Published ${tag} from ${release_sha}."
