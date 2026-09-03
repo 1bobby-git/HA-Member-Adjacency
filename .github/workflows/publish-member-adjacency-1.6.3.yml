@@ -1,0 +1,286 @@
+name: Publish Member Adjacency 1.6.3
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/publish-member-adjacency-1.6.3.yml
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: publish-member-adjacency-1.6.3
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: 1.6.3
+      ICON_SOURCE_SHA256: b8613d534aea20cfc7b81a84719c3572abcfa5c2a5ba5f0b50d39b30c149479c
+      LOGO_BLOB_SHA: 2fdc3f421b8dcf6abc06a6089887f08288e02d5e
+    steps:
+      - name: Check out latest main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Prepare latest branch state
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          git checkout -B publish-member-adjacency-1.6.3 origin/main
+          if git ls-remote --exit-code --tags origin "refs/tags/v${RELEASE_VERSION}" >/dev/null 2>&1; then
+            echo "v${RELEASE_VERSION} already exists." >&2
+            exit 1
+          fi
+
+      - name: Install image tooling
+        run: python -m pip install --disable-pip-version-check Pillow
+
+      - name: Build approved local brand assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .brand-source custom_components/member_adjacency/brand
+          base64 --decode .brand-stage/icon.b64 > .brand-source/icon.png
+          printf '%s  %s\n' "${ICON_SOURCE_SHA256}" .brand-source/icon.png | sha256sum --check --strict
+          gh api "/repos/${GITHUB_REPOSITORY}/git/blobs/${LOGO_BLOB_SHA}" --jq '.content' \
+            | tr -d '\n' \
+            | base64 --decode > .brand-source/logo.png
+
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          root = Path("custom_components/member_adjacency/brand")
+          source_icon = Image.open(".brand-source/icon.png").convert("RGBA")
+          source_logo = Image.open(".brand-source/logo.png").convert("RGBA")
+
+          if source_icon.size != (192, 192):
+              raise SystemExit(f"Unexpected icon source size: {source_icon.size}")
+          if source_logo.size != (423, 128):
+              raise SystemExit(f"Unexpected logo source size: {source_logo.size}")
+
+          def save(image: Image.Image, path: Path) -> None:
+              image.save(path, format="PNG", optimize=True, compress_level=9)
+
+          icon_256 = source_icon.resize((256, 256), Image.Resampling.LANCZOS)
+          icon_512 = source_icon.resize((512, 512), Image.Resampling.LANCZOS)
+          save(icon_256, root / "icon.png")
+          save(icon_512, root / "icon@2x.png")
+          save(icon_256, root / "dark_icon.png")
+          save(icon_512, root / "dark_icon@2x.png")
+
+          logo_128 = source_logo.resize((423, 128), Image.Resampling.LANCZOS)
+          logo_256 = source_logo.resize((846, 256), Image.Resampling.LANCZOS)
+          save(logo_128, root / "logo.png")
+          save(logo_256, root / "logo@2x.png")
+
+          def dark_variant(image: Image.Image) -> Image.Image:
+              out = image.copy().convert("RGBA")
+              pixels = []
+              for r, g, b, a in out.getdata():
+                  if a == 0:
+                      pixels.append((r, g, b, a))
+                      continue
+                  is_brand_blue = b > r * 1.12 and b > g * 1.05
+                  luminance = (299 * r + 587 * g + 114 * b) // 1000
+                  if not is_brand_blue and luminance < 185:
+                      pixels.append((226, 232, 240, a))
+                  else:
+                      pixels.append((r, g, b, a))
+              out.putdata(pixels)
+              return out
+
+          save(dark_variant(logo_128), root / "dark_logo.png")
+          save(dark_variant(logo_256), root / "dark_logo@2x.png")
+
+          expected = {
+              "icon.png": (256, 256),
+              "icon@2x.png": (512, 512),
+              "dark_icon.png": (256, 256),
+              "dark_icon@2x.png": (512, 512),
+              "logo.png": (423, 128),
+              "logo@2x.png": (846, 256),
+              "dark_logo.png": (423, 128),
+              "dark_logo@2x.png": (846, 256),
+          }
+          for name, size in expected.items():
+              image = Image.open(root / name).convert("RGBA")
+              if image.size != size:
+                  raise SystemExit(f"Unexpected size for {name}: {image.size}")
+              alpha_min, alpha_max = image.getchannel("A").getextrema()
+              if alpha_min != 0 or alpha_max == 0:
+                  raise SystemExit(f"Missing transparency in {name}: {(alpha_min, alpha_max)}")
+          PY
+
+      - name: Update release metadata and documentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+
+          version = "1.6.3"
+
+          manifest_path = Path("custom_components/member_adjacency/manifest.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          if manifest.get("version") != "1.6.2":
+              raise SystemExit(f"Unexpected previous manifest version: {manifest.get('version')}")
+          manifest["version"] = version
+          manifest_path.write_text(
+              json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+
+          test_path = Path("tests/test_release_alignment.py")
+          test_text = test_path.read_text(encoding="utf-8")
+          old_test = 'CURRENT_VERSION = "1.6.2"'
+          new_test = f'CURRENT_VERSION = "{version}"'
+          if test_text.count(old_test) != 1:
+              raise SystemExit("Release alignment version marker was not found exactly once")
+          test_path.write_text(test_text.replace(old_test, new_test, 1), encoding="utf-8")
+
+          changelog_path = Path("CHANGELOG.md")
+          changelog = changelog_path.read_text(encoding="utf-8")
+          heading = "# 변경 이력\n\n"
+          entry = (
+              "## 1.6.3 - 2026-09-03\n\n"
+              "- 사용자 확정 정사각형 기본 아이콘과 가로형 `인접센서 / MEMBER ADJACENCY` 워드마크로 브랜드 자산을 교체했습니다.\n"
+              "- 기본·다크 테마용 256px/512px 아이콘과 128px/256px 높이 로고를 컴포넌트 내부 `brand/` 폴더에 포함했습니다.\n"
+              "- 외부 개인 `brands` 저장소를 런타임 원본으로 사용하지 않고 Home Assistant 로컬 Brands Proxy API가 컴포넌트 자산을 제공하도록 정리했습니다.\n"
+              "- 센서 계산, 엔티티 ID, 이벤트 및 설정 동작은 변경하지 않았습니다.\n\n"
+          )
+          if heading not in changelog:
+              raise SystemExit("Changelog heading was not found")
+          if "## 1.6.3" not in changelog:
+              changelog_path.write_text(changelog.replace(heading, heading + entry, 1), encoding="utf-8")
+
+          readme_path = Path("README.md")
+          readme = readme_path.read_text(encoding="utf-8")
+          block = """<!-- project-branding:start -->
+          <p align="center">
+            <img src="https://raw.githubusercontent.com/1bobby-git/HA-Member-Adjacency/v1.6.3/custom_components/member_adjacency/brand/logo@2x.png" alt="인접센서 로고" width="520">
+          </p>
+          <p align="center">
+            <a href="https://github.com/1bobby-git/HA-Member-Adjacency/stargazers">
+              <img src="https://img.shields.io/github/stars/1bobby-git/HA-Member-Adjacency?style=flat-square&logo=github&label=Stars" alt="GitHub Stars">
+            </a>
+          </p>
+          <!-- project-branding:end -->"""
+          pattern = re.compile(
+              r"<!-- project-branding:start -->.*?<!-- project-branding:end -->",
+              re.DOTALL,
+          )
+          if len(pattern.findall(readme)) != 1:
+              raise SystemExit("README branding block was not found exactly once")
+          readme_path.write_text(pattern.sub(block, readme, count=1), encoding="utf-8")
+
+          Path("BRAND_ASSETS.md").write_text(
+              """# 인접센서 로컬 브랜드 자산
+
+          인접센서의 Home Assistant 브랜드 이미지는 통합 패키지 내부의 다음 경로에 포함됩니다.
+
+          ```text
+          custom_components/member_adjacency/brand/
+          ├─ icon.png
+          ├─ icon@2x.png
+          ├─ dark_icon.png
+          ├─ dark_icon@2x.png
+          ├─ logo.png
+          ├─ logo@2x.png
+          ├─ dark_logo.png
+          └─ dark_logo@2x.png
+          ```
+
+          ## 파일 규격
+
+          - `icon.png`, `dark_icon.png`: 256×256 투명 PNG
+          - `icon@2x.png`, `dark_icon@2x.png`: 512×512 투명 PNG
+          - `logo.png`, `dark_logo.png`: 423×128 투명 PNG
+          - `logo@2x.png`, `dark_logo@2x.png`: 846×256 투명 PNG
+
+          기본 아이콘은 두 위치 엔티티와 근접 관계를 두 개의 사람형 위치 핀, 연결점, 무선 신호로 표현합니다. 가로형 로고는 동일한 심볼과 `인접센서 / MEMBER ADJACENCY` 워드마크를 함께 사용합니다.
+
+          Home Assistant 2026.3 이상에서는 로컬 Brands Proxy API가 이 통합 내부 자산을 제공하므로 외부 개인 Brands 저장소를 런타임 원본으로 사용하지 않습니다.
+          """.replace("          ", ""),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Validate release candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          python -m unittest discover
+          python scripts/check_release_alignment.py "v${RELEASE_VERSION}"
+
+      - name: Commit final release state
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .brand-source .brand-stage
+          rm -f .github/workflows/publish-member-adjacency-1.6.3.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Publish Member Adjacency 1.6.3 brand assets"
+          final_sha="$(git rev-parse HEAD)"
+          git push origin HEAD:main
+          echo "final_sha=${final_sha}" >> "${GITHUB_OUTPUT}"
+          echo "FINAL_SHA=${final_sha}" >> "${GITHUB_ENV}"
+
+      - name: Run standard validation for the release commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run validate.yaml --ref main -f release_tag="v${RELEASE_VERSION}"
+          run_id=""
+          for attempt in $(seq 1 30); do
+            runs_json="$(gh run list --workflow validate.yaml --event workflow_dispatch --branch main --limit 30 --json databaseId,headSha,status,conclusion)"
+            run_id="$(python -c '
+          import json, os, sys
+          runs = json.load(sys.stdin)
+          print(next((str(item["databaseId"]) for item in runs if item.get("headSha") == os.environ["FINAL_SHA"]), ""))
+          ' <<<"${runs_json}")"
+            [[ -n "${run_id}" ]] && break
+            sleep 5
+          done
+          [[ -n "${run_id}" ]] || { echo "Validation run was not found." >&2; exit 1; }
+          gh run watch "${run_id}" --exit-status
+
+      - name: Tag and publish v1.6.3
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_main="$(gh api "/repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')"
+          [[ "${current_main}" == "${FINAL_SHA}" ]] || { echo "Main advanced during release." >&2; exit 1; }
+
+          tag="v${RELEASE_VERSION}"
+          git tag -a "${tag}" "${FINAL_SHA}" -m "Member Adjacency ${tag}"
+          git push origin "${tag}"
+
+          cat > /tmp/release-notes.md <<'NOTES'
+          - 사용자 확정 정사각형 기본 아이콘과 가로형 `인접센서 / MEMBER ADJACENCY` 워드마크로 브랜드 자산을 교체했습니다.
+          - 기본·다크 테마용 256px/512px 아이콘과 128px/256px 높이 로고를 컴포넌트 내부 `brand/` 폴더에 포함했습니다.
+          - Home Assistant 2026.3 이상에서는 로컬 Brands Proxy API가 컴포넌트 내부 자산을 제공합니다.
+          - 센서 계산, 엔티티 ID, 이벤트 및 설정 동작은 변경하지 않았습니다.
+          NOTES
+          sed -i 's/^          //' /tmp/release-notes.md
+
+          gh release create "${tag}" \
+            --verify-tag \
+            --target "${FINAL_SHA}" \
+            --title "Member Adjacency ${tag}" \
+            --notes-file /tmp/release-notes.md
