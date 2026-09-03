@@ -1,6 +1,6 @@
 <!-- project-branding:start -->
 <p align="center">
-  <img src="https://raw.githubusercontent.com/1bobby-git/brands/4682db180f6fa4451b17d49bbb883d111401ffa2/custom_integrations/member_adjacency/icon@2x.png" alt="인접센서 아이콘" width="180">
+  <img src="https://raw.githubusercontent.com/1bobby-git/brands/master/custom_integrations/member_adjacency/logo%402x.png" alt="인접센서 로고" width="420">
 </p>
 <p align="center">
   <a href="https://github.com/1bobby-git/HA-Member-Adjacency/stargazers">
