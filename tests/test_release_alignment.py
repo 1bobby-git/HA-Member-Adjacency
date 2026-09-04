@@ -14,7 +14,7 @@ from unittest.mock import patch
 release_alignment = importlib.import_module("scripts.check_release_alignment")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "check_release_alignment.py"
-CURRENT_VERSION = "1.6.3"
+CURRENT_VERSION = "1.6.4"
 
 
 def run_release_alignment_cli(

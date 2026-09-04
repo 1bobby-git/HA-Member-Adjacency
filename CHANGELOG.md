@@ -1,5 +1,12 @@
 # 변경 이력
 
+## 1.6.4 - 2026-09-04
+
+- `integration_type`을 `service`로 복원해 Home Assistant 2026.9의 **설정 → 기기 및 서비스 → 통합** 목록에 기존 설정 항목이 다시 표시되도록 했습니다.
+- 기존 `OptionsFlow`와 설정 변경 후 config entry reload 동작을 그대로 유지해 통합 상세 화면의 **구성**에서 임계값·정확도·디바운스·GPS 신뢰도 옵션을 수정하고 저장할 수 있습니다.
+- config entry, 기기 식별자, 5개 엔티티의 entity ID/unique ID 생성 규칙은 변경하지 않았습니다.
+- helper 분류 회귀, OptionsFlow 제공 여부, reload listener, entry ID 기반 기기·엔티티 식별 규칙을 검사하는 회귀 테스트를 추가했습니다.
+
 ## 1.6.3 - 2026-09-03
 
 - 사용자 확정 정사각형 기본 아이콘과 가로형 `인접센서 / MEMBER ADJACENCY` 워드마크로 브랜드 자산을 교체했습니다.
