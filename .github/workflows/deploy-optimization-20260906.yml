@@ -1,0 +1,73 @@
+name: Deploy optimization 20260906
+on:
+  push:
+    branches: [release/optimization-20260906]
+    paths: [.github/workflows/deploy-optimization-20260906.yml]
+permissions:
+  contents: write
+concurrency:
+  group: deploy-optimization-20260906
+  cancel-in-progress: false
+jobs:
+  validate-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      PATCH_SPEC: >-
+        {"repository":"1bobby-git/HA-Member-Adjacency","branch":"main","base_version":"1.6.4","candidate_version":"1.6.5","summary":["최근 위치 이력 집계의 전체 순회를 이진 탐색으로 교체","만료 항목이 없으면 이력 리스트를 매번 재생성하지 않음; 시각 역행 시에도 정렬 유지","디바운스·이벤트 횟수·신뢰도 임계값·거리 계산·근접 자동화·통합 목록 노출은 변경하지 않음"],"changes":[{"path":"custom_components/member_adjacency/manager.py","git_blob_sha1":"0c1b5ea73596c9243b06e325d15cb7d686bd8099","old":"import logging\nfrom dataclasses import dataclass\n","new":"import logging\nfrom bisect import bisect_left, insort_right\nfrom dataclasses import dataclass\n"},{"path":"custom_components/member_adjacency/manager.py","git_blob_sha1":"0c1b5ea73596c9243b06e325d15cb7d686bd8099","old":"    def _count_recent_updates(self, history: list[datetime], window_s: int) -> int:\n        \"\"\"지정된 윈도우 내의 업데이트 횟수를 반환.\"\"\"\n        now = dt_util.utcnow()\n        cutoff = now - timedelta(seconds=window_s)\n        return sum(1 for ts in history if ts >= cutoff)\n","new":"    def _count_recent_updates(self, history: list[datetime], window_s: int) -> int:\n        \"\"\"Count the sorted history maintained by _record_update in O(log n).\"\"\"\n        now = dt_util.utcnow()\n        cutoff = now - timedelta(seconds=window_s)\n        return len(history) - bisect_left(history, cutoff)\n"},{"path":"custom_components/member_adjacency/manager.py","git_blob_sha1":"0c1b5ea73596c9243b06e325d15cb7d686bd8099","old":"    def _record_update(self, side: str) -> None:\n        \"\"\"업데이트 이력에 현재 시간 기록.\"\"\"\n        now = dt_util.utcnow()\n        if side == \"a\":\n            self.a_update_history.append(now)\n            self.a_update_history = self._prune_history(self.a_update_history, self.update_window_s * 2)\n        else:\n            self.b_update_history.append(now)\n            self.b_update_history = self._prune_history(self.b_update_history, self.update_window_s * 2)\n","new":"    def _record_update(self, side: str) -> None:\n        \"\"\"Retain every update while avoiding a full Python scan per event.\"\"\"\n        now = dt_util.utcnow()\n        history = self.a_update_history if side == \"a\" else self.b_update_history\n        # Usually append; preserve sorted order even after a clock correction.\n        if history and now < history[-1]:\n            insort_right(history, now)\n        else:\n            history.append(now)\n        cutoff = dt_util.utcnow() - timedelta(seconds=self.update_window_s * 2)\n        expired = bisect_left(history, cutoff)\n        if expired:\n            del history[:expired]\n"},{"path":"custom_components/member_adjacency/manifest.json","git_blob_sha1":"3af236832a08da45ec84c2f702e98edd3a554308","old":"\"version\": \"1.6.4\"","new":"\"version\": \"1.6.5\""}]}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          repository: 1bobby-git/HA-iOS-ANCS
+          ref: d5c58703029ea8cfbff4cfd335c59fc49d3fbe98
+          path: .release-helper
+          sparse-checkout: .optimization-release
+          persist-credentials: false
+      - name: Keep helpers outside release source
+        run: |
+          cp .release-helper/.optimization-release/deploy.py "$RUNNER_TEMP/optimization-deploy.py"
+          cp .release-helper/.optimization-release/unittest_report.py "$RUNNER_TEMP/optimization-unittest.py"
+          rm -rf .release-helper
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check source hashes, version and branch protections
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python "$RUNNER_TEMP/optimization-deploy.py" check
+      - name: Test unchanged baseline
+        run: |
+          python -m compileall -q custom_components/member_adjacency
+          PYTHONPATH="$PWD" python "$RUNNER_TEMP/optimization-unittest.py" . "$RUNNER_TEMP/optimization-baseline.xml"
+          python scripts/check_release_alignment.py v1.6.4
+      - name: Apply exact source patches and update documentation
+        run: python "$RUNNER_TEMP/optimization-deploy.py" apply
+      - name: Test complete patched integration and release alignment
+        run: |
+          python -m compileall -q custom_components/member_adjacency
+          PYTHONPATH="$PWD" python "$RUNNER_TEMP/optimization-unittest.py" . "$RUNNER_TEMP/optimization-patched.xml"
+          python scripts/check_release_alignment.py v1.6.5
+      - name: HACS validation
+        uses: hacs/action@main
+        with:
+          category: integration
+      - name: Hassfest validation
+        uses: home-assistant/actions/hassfest@master
+      - name: Publish verified commit, tag and release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python "$RUNNER_TEMP/optimization-deploy.py" publish
+      - name: Preserve validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: optimization-validation
+          path: |
+            ${{ runner.temp }}/optimization-baseline.xml
+            ${{ runner.temp }}/optimization-patched.xml
+            ${{ runner.temp }}/optimization-result.json
+          if-no-files-found: ignore
