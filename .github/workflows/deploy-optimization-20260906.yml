@@ -12,9 +12,6 @@ jobs:
   validate-and-publish:
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    env:
-      PATCH_SPEC: >-
-        {"repository":"1bobby-git/HA-Member-Adjacency","branch":"main","base_version":"1.6.4","candidate_version":"1.6.5","summary":["최근 위치 이력 집계의 전체 순회를 이진 탐색으로 교체","만료 항목이 없으면 이력 리스트를 매번 재생성하지 않음; 시각 역행 시에도 정렬 유지","디바운스·이벤트 횟수·신뢰도 임계값·거리 계산·근접 자동화·통합 목록 노출은 변경하지 않음"],"changes":[{"path":"custom_components/member_adjacency/manager.py","git_blob_sha1":"0c1b5ea73596c9243b06e325d15cb7d686bd8099","old":"import logging\nfrom dataclasses import dataclass\n","new":"import logging\nfrom bisect import bisect_left, insort_right\nfrom dataclasses import dataclass\n"},{"path":"custom_components/member_adjacency/manager.py","git_blob_sha1":"0c1b5ea73596c9243b06e325d15cb7d686bd8099","old":"    def _count_recent_updates(self, history: list[datetime], window_s: int) -> int:\n        \"\"\"지정된 윈도우 내의 업데이트 횟수를 반환.\"\"\"\n        now = dt_util.utcnow()\n        cutoff = now - timedelta(seconds=window_s)\n        return sum(1 for ts in history if ts >= cutoff)\n","new":"    def _count_recent_updates(self, history: list[datetime], window_s: int) -> int:\n        \"\"\"Count the sorted history maintained by _record_update in O(log n).\"\"\"\n        now = dt_util.utcnow()\n        cutoff = now - timedelta(seconds=window_s)\n        return len(history) - bisect_left(history, cutoff)\n"},{"path":"custom_components/member_adjacency/manager.py","git_blob_sha1":"0c1b5ea73596c9243b06e325d15cb7d686bd8099","old":"    def _record_update(self, side: str) -> None:\n        \"\"\"업데이트 이력에 현재 시간 기록.\"\"\"\n        now = dt_util.utcnow()\n        if side == \"a\":\n            self.a_update_history.append(now)\n            self.a_update_history = self._prune_history(self.a_update_history, self.update_window_s * 2)\n        else:\n            self.b_update_history.append(now)\n            self.b_update_history = self._prune_history(self.b_update_history, self.update_window_s * 2)\n","new":"    def _record_update(self, side: str) -> None:\n        \"\"\"Retain every update while avoiding a full Python scan per event.\"\"\"\n        now = dt_util.utcnow()\n        history = self.a_update_history if side == \"a\" else self.b_update_history\n        # Usually append; preserve sorted order even after a clock correction.\n        if history and now < history[-1]:\n            insort_right(history, now)\n        else:\n            history.append(now)\n        cutoff = dt_util.utcnow() - timedelta(seconds=self.update_window_s * 2)\n        expired = bisect_left(history, cutoff)\n        if expired:\n            del history[:expired]\n"},{"path":"custom_components/member_adjacency/manifest.json","git_blob_sha1":"3af236832a08da45ec84c2f702e98edd3a554308","old":"\"version\": \"1.6.4\"","new":"\"version\": \"1.6.5\""}]}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,11 +24,25 @@ jobs:
           path: .release-helper
           sparse-checkout: .optimization-release
           persist-credentials: false
-      - name: Keep helpers outside release source
+      - name: Load approved patches and correct draft lookup
         run: |
-          cp .release-helper/.optimization-release/deploy.py "$RUNNER_TEMP/optimization-deploy.py"
-          cp .release-helper/.optimization-release/unittest_report.py "$RUNNER_TEMP/optimization-unittest.py"
-          rm -rf .release-helper
+          python - <<'PY'
+          import json, os, re, shutil, subprocess
+          from pathlib import Path
+          original = subprocess.check_output(['git', 'show', '525231ccf3d87d8382139c40bd61fc39b2d89af6:.github/workflows/deploy-optimization-20260906.yml'], text=True)
+          spec = json.loads(re.search(r'PATCH_SPEC: >-\s+(\{[^\n]+\})', original).group(1))
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write('PATCH_SPEC=' + json.dumps(spec, ensure_ascii=False) + '\n')
+          temp = Path(os.environ['RUNNER_TEMP'])
+          source = Path('.release-helper/.optimization-release')
+          text = (source/'deploy.py').read_text()
+          old = '    release = api("releases/tags/" + state["tag"])'
+          assert text.count(old) == 2
+          text = text.replace(old, '    release = next(r for r in api("releases?per_page=100") if r["tag_name"] == state["tag"])', 1)
+          (temp/'optimization-deploy.py').write_text(text)
+          shutil.copyfile(source/'unittest_report.py', temp/'optimization-unittest.py')
+          shutil.rmtree('.release-helper')
+          PY
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -46,6 +57,30 @@ jobs:
           python scripts/check_release_alignment.py v1.6.4
       - name: Apply exact source patches and update documentation
         run: python "$RUNNER_TEMP/optimization-deploy.py" apply
+      - name: Align native release contracts without changing visibility or options tests
+        run: |
+          python - <<'PY'
+          import ast, hashlib, json, os
+          from pathlib import Path
+          changes = {
+              'tests/test_release_alignment.py': ('e1c504ccf4e6849c6a9d061a9322ee07be85aa9f', 'CURRENT_VERSION = "1.6.4"', 'CURRENT_VERSION = "1.6.5"'),
+              'tests/test_integration_visibility.py': ('2271db20bfa2b5e89666016cfc6b7e9d61d9c376', 'self.assertEqual("1.6.4", manifest["version"])', 'self.assertEqual("1.6.5", manifest["version"])'),
+          }
+          state_path = Path(os.environ['RUNNER_TEMP'])/'optimization-state.json'
+          state = json.loads(state_path.read_text())
+          for name, (expected, old, new) in changes.items():
+              p = Path(name)
+              raw = p.read_bytes()
+              assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest() == expected
+              text = raw.decode()
+              assert text.count(old) == 1
+              text = text.replace(old, new)
+              ast.parse(text)
+              p.write_text(text)
+              state['paths'].append(name)
+          state['paths'] = sorted(set(state['paths']))
+          state_path.write_text(json.dumps(state, ensure_ascii=False, indent=2)+'\n')
+          PY
       - name: Test complete patched integration and release alignment
         run: |
           python -m compileall -q custom_components/member_adjacency
