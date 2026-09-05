@@ -1,0 +1,26 @@
+name: SmartThings Web isolated source snapshot
+on:
+  push:
+    branches: [optimization/2026-09-safe]
+    paths: [.github/workflows/optimization-web-audit.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Snapshot last-priority public repository (no HA access)
+        run: |
+          set -euo pipefail
+          mkdir sources
+          git clone --depth 1 https://github.com/1bobby-git/HA-SmartThings_Web.git checkout
+          git -C checkout log -1 --format='%H%n%T%n%s' > sources/HA-SmartThings_Web.revision.txt
+          git -C checkout archive --format=tar.gz --prefix=HA-SmartThings_Web/ HEAD > sources/HA-SmartThings_Web.tar.gz
+          sha256sum sources/*.tar.gz > sources/SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: smartthings-web-source
+          path: sources/
+          retention-days: 3
+          if-no-files-found: error
