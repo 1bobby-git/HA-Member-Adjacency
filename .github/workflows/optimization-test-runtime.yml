@@ -1,0 +1,38 @@
+name: Isolated Python 3.14 test runtime
+on:
+  push:
+    branches: [optimization/2026-09-safe]
+    paths: [.github/workflows/optimization-test-runtime.yml]
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14.4'
+      - name: Install pinned regression dependencies
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/1bobby-git/HA-Kepco-Meter.git source
+          test "$(git -C source rev-parse HEAD)" = d7102641a45c7f968731cb07d2e6e5c3bcdcb100
+          python -m pip install -r source/requirements_test.txt paho-mqtt==2.1.0
+          python -m pip freeze > runtime-packages.txt
+      - name: Archive test interpreter and dependencies only
+        run: |
+          set -euo pipefail
+          tar -czf python314-test-runtime.tar.gz \
+            --exclude='__pycache__' --exclude='*.pyc' \
+            --exclude='hass_frontend/frontend_latest' --exclude='hass_frontend/frontend_es5' \
+            --exclude='*.woff' --exclude='*.woff2' --exclude='*.ttf' --exclude='*.otf' \
+            -C "$pythonLocation" .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: python314-test-runtime
+          path: |
+            python314-test-runtime.tar.gz
+            runtime-packages.txt
+          retention-days: 1
+          if-no-files-found: error
