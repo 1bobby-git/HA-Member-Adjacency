@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from bisect import bisect_left, insort_right
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -468,10 +469,10 @@ class AdjacencyManager:
         return _try_get_coords_from_state(st), _get_accuracy_m(st)
 
     def _count_recent_updates(self, history: list[datetime], window_s: int) -> int:
-        """지정된 윈도우 내의 업데이트 횟수를 반환."""
+        """Count the sorted history maintained by _record_update in O(log n)."""
         now = dt_util.utcnow()
         cutoff = now - timedelta(seconds=window_s)
-        return sum(1 for ts in history if ts >= cutoff)
+        return len(history) - bisect_left(history, cutoff)
 
     def _prune_history(self, history: list[datetime], window_s: int) -> list[datetime]:
         """오래된 항목을 제거하고 윈도우 내의 항목만 유지."""
@@ -480,14 +481,18 @@ class AdjacencyManager:
         return [ts for ts in history if ts >= cutoff]
 
     def _record_update(self, side: str) -> None:
-        """업데이트 이력에 현재 시간 기록."""
+        """Retain every update while avoiding a full Python scan per event."""
         now = dt_util.utcnow()
-        if side == "a":
-            self.a_update_history.append(now)
-            self.a_update_history = self._prune_history(self.a_update_history, self.update_window_s * 2)
+        history = self.a_update_history if side == "a" else self.b_update_history
+        # Usually append; preserve sorted order even after a clock correction.
+        if history and now < history[-1]:
+            insort_right(history, now)
         else:
-            self.b_update_history.append(now)
-            self.b_update_history = self._prune_history(self.b_update_history, self.update_window_s * 2)
+            history.append(now)
+        cutoff = dt_util.utcnow() - timedelta(seconds=self.update_window_s * 2)
+        expired = bisect_left(history, cutoff)
+        if expired:
+            del history[:expired]
 
     def _calculate_convergence_speed(self, current_distance_m: float) -> float | None:
         """두 엔티티가 가까워지는 속도(km/h) 계산. 양수 = 가까워짐, 음수 = 멀어짐."""
