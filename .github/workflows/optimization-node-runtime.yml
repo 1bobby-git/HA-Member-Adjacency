@@ -1,0 +1,34 @@
+name: Isolated Node test runtime
+on:
+  push:
+    branches: [optimization/2026-09-safe]
+    paths: [.github/workflows/optimization-node-runtime.yml]
+permissions:
+  contents: read
+jobs:
+  runtime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.1'
+      - name: Prepare pinned dependencies only (no live HA or Samsung access)
+        run: |
+          set -euo pipefail
+          mkdir artifacts
+          git clone --depth 1 https://github.com/1bobby-git/HA-SmartThings_Web.git web
+          test "$(git -C web rev-parse HEAD)" = a2172054cd0af2f6a867483e89b4913d09861bfe
+          (cd web && npm ci)
+          tar -czf artifacts/web-node-modules.tar.gz -C web node_modules
+          git clone --depth 1 https://github.com/1bobby-git/HA-Kepco-Meter.git kepco
+          test "$(git -C kepco rev-parse HEAD)" = d7102641a45c7f968731cb07d2e6e5c3bcdcb100
+          (cd kepco && npm ci)
+          tar -czf artifacts/kepco-node-modules.tar.gz -C kepco node_modules
+          tar -czf artifacts/node-runtime.tar.gz -C "$(dirname "$(dirname "$(readlink -f "$(command -v node)")")")" .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: node-test-runtime
+          path: artifacts/
+          retention-days: 1
+          if-no-files-found: error
