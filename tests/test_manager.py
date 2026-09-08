@@ -138,6 +138,24 @@ manager_module = importlib.import_module("custom_components.member_adjacency.man
 AdjacencyManager = manager_module.AdjacencyManager
 
 
+class CoordinateValidationTests(unittest.TestCase):
+    def test_invalid_coordinates_are_rejected_in_all_supported_formats(self) -> None:
+        for lat, lon in (("nan", 127), (37, "inf"), (91, 127), (37, -181)):
+            states = (
+                types.SimpleNamespace(attributes={"Location": [lat, lon]}, state="home"),
+                types.SimpleNamespace(attributes={"latitude": lat, "longitude": lon}, state="home"),
+                types.SimpleNamespace(attributes={}, state=f"{lat},{lon}"),
+            )
+            for state in states:
+                with self.subTest(state=state):
+                    self.assertIsNone(manager_module._try_get_coords_from_state(state))
+
+    def test_valid_coordinate_strings_and_boundary_values_are_preserved(self) -> None:
+        for lat, lon in (("37.5", "127.0"), (-90, -180), (90, 180), (0, 0)):
+            state = types.SimpleNamespace(attributes={"Location": [lat, lon]}, state="home")
+            self.assertEqual((float(lat), float(lon)), manager_module._try_get_coords_from_state(state))
+
+
 def make_manager() -> AdjacencyManager:
     entry = FakeEntry(
         data={

@@ -126,6 +126,17 @@ def _round1(x: float) -> float:
     return round(float(x), 1)
 
 
+def _parse_coordinates(latitude: Any, longitude: Any) -> tuple[float, float] | None:
+    """Accept only finite coordinates within geographic bounds."""
+    try:
+        lat, lon = float(latitude), float(longitude)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if -90 <= lat <= 90 and -180 <= lon <= 180:
+        return lat, lon
+    return None
+
+
 def _try_get_coords_from_state(state) -> tuple[float, float] | None:
     """Extract latitude/longitude from a state object."""
     if state is None:
@@ -136,26 +147,17 @@ def _try_get_coords_from_state(state) -> tuple[float, float] | None:
     # mobile_app geocoded sensor
     loc = attrs.get("Location")
     if isinstance(loc, (list, tuple)) and len(loc) == 2:
-        try:
-            return (float(loc[0]), float(loc[1]))
-        except (TypeError, ValueError):
-            return None
+        return _parse_coordinates(loc[0], loc[1])
 
     # general entities
     if "latitude" in attrs and "longitude" in attrs:
-        try:
-            return (float(attrs["latitude"]), float(attrs["longitude"]))
-        except (TypeError, ValueError):
-            return None
+        return _parse_coordinates(attrs["latitude"], attrs["longitude"])
 
     # string state "lat,lon"
     if isinstance(state.state, str) and "," in state.state:
         parts = [p.strip() for p in state.state.split(",")]
         if len(parts) == 2:
-            try:
-                return (float(parts[0]), float(parts[1]))
-            except (TypeError, ValueError):
-                return None
+            return _parse_coordinates(parts[0], parts[1])
 
     return None
 
