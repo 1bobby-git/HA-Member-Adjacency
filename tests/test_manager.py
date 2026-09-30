@@ -279,5 +279,49 @@ class ManagerDecisionPathTests(unittest.TestCase):
         self.assertEqual(1, mgr.data.b_updates_in_window)
 
 
+class EnterEventDataTests(unittest.IsolatedAsyncioTestCase):
+    async def test_zero_convergence_speed_is_reported_not_dropped(self) -> None:
+        fired: list[tuple[str, dict]] = []
+        entry = FakeEntry(
+            data={
+                "base_entity": "person.base",
+                "tracker_entity": "person.tracker",
+                "entry_threshold_m": 500,
+                "exit_threshold_m": 700,
+                "debounce_seconds": 0,
+                "max_speed_kmh": 0,
+                "min_updates_for_proximity": 1,
+                "require_reliable_proximity": True,
+            }
+        )
+        mgr = AdjacencyManager(FakeHass(), entry)
+        mgr.hass.bus.async_fire = lambda event_type, data: fired.append(
+            (event_type, data)
+        )
+        # Base and tracker ~100 m apart along latitude.
+        mgr._coords_and_acc = lambda entity_id: (  # type: ignore[method-assign]
+            ((37.500000, 127.0), 5.0)
+            if entity_id == "person.base"
+            else ((37.500900, 127.0), 5.0)
+        )
+
+        now = datetime(2026, 8, 4, 12, 0, tzinfo=timezone.utc)
+        original_utcnow = manager_module.dt_util.utcnow
+        try:
+            manager_module.dt_util.utcnow = lambda: now
+            # Seed a previous identical distance so convergence resolves to 0.0.
+            mgr._prev_distance_m = float(
+                manager_module.ha_distance(37.500000, 127.0, 37.500900, 127.0)
+            )
+            mgr._prev_distance_time = now - timedelta(seconds=10)
+            await mgr.async_refresh()
+        finally:
+            manager_module.dt_util.utcnow = original_utcnow
+
+        enter_events = [data for name, data in fired if name == manager_module.EVENT_ENTER]
+        self.assertEqual(1, len(enter_events))
+        self.assertEqual(0.0, enter_events[0]["convergence_speed_kmh"])
+
+
 if __name__ == "__main__":
     unittest.main()

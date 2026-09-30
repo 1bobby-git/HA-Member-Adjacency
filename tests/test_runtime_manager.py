@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib
 import unittest
 
@@ -98,6 +99,37 @@ class RuntimeManagerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("missing_coords", manager.data.last_error)
         self.assertTrue(manager.data.proximity)
         self.assertEqual(before, manager.hass.bus.events)
+
+    async def test_async_stop_cancels_pending_refresh_task(self) -> None:
+        manager = self.make_manager()
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def _blocking_refresh(**_kwargs) -> None:
+            started.set()
+            await release.wait()
+
+        manager.async_refresh = _blocking_refresh  # type: ignore[method-assign]
+
+        manager._schedule_refresh({"a"})
+        self.assertEqual(1, len(manager._refresh_tasks))
+        task = next(iter(manager._refresh_tasks))
+        await started.wait()
+
+        await manager.async_stop()
+
+        self.assertEqual(0, len(manager._refresh_tasks))
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+
+    async def test_completed_refresh_task_is_discarded_from_tracking(self) -> None:
+        manager = self.make_manager()
+
+        manager._schedule_refresh({"a"})
+        self.assertEqual(1, len(manager._refresh_tasks))
+        await asyncio.gather(*list(manager._refresh_tasks))
+
+        self.assertEqual(0, len(manager._refresh_tasks))
 
 
 if __name__ == "__main__":

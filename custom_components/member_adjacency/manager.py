@@ -783,7 +783,7 @@ class AdjacencyManager:
                     # Legacy aliases
                     "a_updates_in_window": self.data.a_updates_in_window,
                     "b_updates_in_window": self.data.b_updates_in_window,
-                    "convergence_speed_kmh": round(self.data.convergence_speed_kmh, 1) if self.data.convergence_speed_kmh else None,
+                    "convergence_speed_kmh": None if self.data.convergence_speed_kmh is None else round(self.data.convergence_speed_kmh, 1),
                 }
 
                 if self.require_reliable_proximity and not reliable:

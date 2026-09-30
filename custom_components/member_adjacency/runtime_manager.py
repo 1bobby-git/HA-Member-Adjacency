@@ -58,6 +58,7 @@ class AdjacencyManager(BaseAdjacencyManager):
         self._pending_changed_sides: set[str] = set()
         self._refresh_lock = asyncio.Lock()
         self._raw_proximity = False
+        self._refresh_tasks: set[asyncio.Task] = set()
 
     async def async_start(self) -> None:
         """Perform the initial calculation and subscribe to both source states."""
@@ -74,6 +75,22 @@ class AdjacencyManager(BaseAdjacencyManager):
             [self.entity_a, self.entity_b],
             _handle,
         )
+
+    async def async_stop(self) -> None:
+        """Cancel debounce, listeners and any in-flight refresh before unload."""
+        await super().async_stop()
+        tasks = list(self._refresh_tasks)
+        self._refresh_tasks.clear()
+        for task in tasks:
+            task.cancel()
+
+    def _schedule_refresh(self, changed_sides: set[str]) -> None:
+        """Create a tracked refresh task so unload can cancel it cleanly."""
+        task = self.hass.async_create_task(
+            self.async_refresh(changed_sides=changed_sides)
+        )
+        self._refresh_tasks.add(task)
+        task.add_done_callback(self._refresh_tasks.discard)
 
     def _side_for_entity(self, entity_id: str | None) -> str | None:
         if entity_id == self.entity_a:
@@ -101,14 +118,14 @@ class AdjacencyManager(BaseAdjacencyManager):
 
         if self.debounce_s <= 0:
             changed = self._consume_changed_sides()
-            self.hass.async_create_task(self.async_refresh(changed_sides=changed))
+            self._schedule_refresh(changed)
             return
 
         @callback
         def _later(_now) -> None:
             self._cancel_debounce = None
             changed = self._consume_changed_sides()
-            self.hass.async_create_task(self.async_refresh(changed_sides=changed))
+            self._schedule_refresh(changed)
 
         self._cancel_debounce = async_call_later(self.hass, self.debounce_s, _later)
 
