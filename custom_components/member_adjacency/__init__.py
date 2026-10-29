@@ -48,20 +48,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a Member Adjacency entry."""
     manager = AdjacencyManager(hass, entry)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = manager
-    await manager.async_start()
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    try:
+        await manager.async_start()
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception:
+        # Do not leave a running manager (state listener, timers) behind a
+        # failed setup.
+        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        await manager.async_stop()
+        raise
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a Member Adjacency entry."""
+    manager: AdjacencyManager | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if manager:
+        # Stop first, so the state the binary sensor saves while its platform
+        # unloads is final and no refresh runs on a half-unloaded entry.
+        await manager.async_stop()
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        manager: AdjacencyManager | None = hass.data.get(DOMAIN, {}).pop(
-            entry.entry_id,
-            None,
-        )
-        if manager:
-            await manager.async_stop()
+        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     return unload_ok

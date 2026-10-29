@@ -18,7 +18,7 @@ class IntegrationVisibilityContractTests(unittest.TestCase):
         )
 
         self.assertEqual("member_adjacency", manifest["domain"])
-        self.assertEqual("1.6.7", manifest["version"])
+        self.assertEqual("1.6.8", manifest["version"])
         self.assertTrue(manifest["config_flow"])
         self.assertEqual("calculated", manifest["iot_class"])
         self.assertEqual("service", manifest["integration_type"])

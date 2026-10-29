@@ -34,6 +34,7 @@ from homeassistant.helpers.event import async_call_later, async_track_state_chan
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
+from homeassistant.util import slugify
 from homeassistant.util.location import distance as ha_distance  # HA Core distance (meters)
 
 from .const import (
@@ -283,6 +284,11 @@ class AdjacencyManager:
         b_id = _short(self.entity_b) if self.entity_b else "b"
         return f"{a_id}_{b_id}"
 
+    def _is_static_side(self, side: str) -> bool:
+        """Return true for a zone, whose position is fixed."""
+        entity_id = self.entity_a if side == "a" else self.entity_b
+        return str(entity_id or "").startswith("zone.")
+
     @property
     def signal(self) -> str:
         return f"{SIGNAL_UPDATE_PREFIX}_{self.entry.entry_id}"
@@ -374,6 +380,51 @@ class AdjacencyManager:
         self._cancel_debounce = async_call_later(self.hass, self.debounce_s, _later)
 
     # --- refresh button: try source update then refresh ---
+    def _notify_target_entity(self, entity_id: str) -> str:
+        """Follow a person to the device tracker that currently locates it."""
+        if entity_id.startswith("person."):
+            state = self.hass.states.get(entity_id)
+            source = (getattr(state, "attributes", None) or {}).get("source") if state else None
+            if isinstance(source, str) and source:
+                return source
+        return entity_id
+
+    def _mobile_app_device(self, entity_id: str):
+        ent_reg = er.async_get(self.hass)
+        dev_reg = dr.async_get(self.hass)
+
+        ent = ent_reg.async_get(entity_id)
+        if not ent or not ent.device_id:
+            return None
+        dev = dev_reg.async_get(ent.device_id)
+        if not dev:
+            return None
+        for ident in dev.identifiers:
+            try:
+                domain, _dev_id = ident
+            except ValueError:
+                continue
+            if domain == "mobile_app":
+                return dev
+        return None
+
+    def _mobile_app_notify_services(self, entity_id: str) -> list[str]:
+        """Candidate notify services of the phone behind an entity, best first.
+
+        The mobile_app integration names the service after the device name it
+        registered with (``slugify("mobile_app_" + name)``); the registry
+        identifier form is kept as a fallback for older setups.
+        """
+        services: list[str] = []
+        dev = self._mobile_app_device(entity_id)
+        name = getattr(dev, "name", None) if dev else None
+        if name:
+            services.append(slugify(f"mobile_app_{name}"))
+        mobile_id = self._mobile_app_identifier_from_entity(entity_id)
+        if mobile_id:
+            services.append(f"mobile_app_{_sanitize_service_suffix(mobile_id)}")
+        return list(dict.fromkeys(services))
+
     def _mobile_app_identifier_from_entity(self, entity_id: str) -> str | None:
         ent_reg = er.async_get(self.hass)
         dev_reg = dr.async_get(self.hass)
@@ -418,25 +469,26 @@ class AdjacencyManager:
         if not entity_id or entity_id.startswith("zone."):
             return
 
-        mobile_id = self._mobile_app_identifier_from_entity(entity_id)
-        if mobile_id:
-            service = f"mobile_app_{_sanitize_service_suffix(mobile_id)}"
-            if self.hass.services.has_service("notify", service):
-                try:
-                    await self.hass.services.async_call(
-                        "notify",
-                        service,
-                        {"message": "request_location_update"},
-                        blocking=True,
-                    )
-                    await asyncio.sleep(0.3)
-                except Exception as err:
-                    self._log_source_update_failure(
-                        "member_adjacency.request_location_update_failed",
-                        entity_id=entity_id,
-                        service=f"notify.{service}",
-                        error=err,
-                    )
+        target = self._notify_target_entity(entity_id)
+        for service in self._mobile_app_notify_services(target):
+            if not self.hass.services.has_service("notify", service):
+                continue
+            try:
+                await self.hass.services.async_call(
+                    "notify",
+                    service,
+                    {"message": "request_location_update"},
+                    blocking=True,
+                )
+                await asyncio.sleep(0.3)
+            except Exception as err:
+                self._log_source_update_failure(
+                    "member_adjacency.request_location_update_failed",
+                    entity_id=entity_id,
+                    service=f"notify.{service}",
+                    error=err,
+                )
+            break
 
         if self.hass.services.has_service("homeassistant", "update_entity"):
             try:
@@ -496,12 +548,24 @@ class AdjacencyManager:
         if expired:
             del history[:expired]
 
-    def _calculate_convergence_speed(self, current_distance_m: float) -> float | None:
-        """두 엔티티가 가까워지는 속도(km/h) 계산. 양수 = 가까워짐, 음수 = 멀어짐."""
+    def _calculate_convergence_speed(
+        self,
+        current_distance_m: float,
+        since: datetime | None = None,
+    ) -> float | None:
+        """두 엔티티가 가까워지는 속도(km/h) 계산. 양수 = 가까워짐, 음수 = 멀어짐.
+
+        ``since`` is the earlier previous fix of the side(s) that just moved:
+        the distance change covers their whole movement since that fix, not
+        only the time since the last calculation. It can only lower the speed.
+        """
         if self._prev_distance_m is None or self._prev_distance_time is None:
             return None
+        baseline = self._prev_distance_time
+        if since is not None and since < baseline:
+            baseline = since
         now = dt_util.utcnow()
-        dt_seconds = (now - self._prev_distance_time).total_seconds()
+        dt_seconds = (now - baseline).total_seconds()
         if dt_seconds <= 0:
             return None
         # 거리 변화 (양수 = 가까워짐)
@@ -510,7 +574,12 @@ class AdjacencyManager:
         speed_kmh = (delta_m / dt_seconds) * 3.6
         return speed_kmh
 
-    def _check_proximity_reliability(self, current_distance_m: float) -> tuple[bool, str | None]:
+    def _check_proximity_reliability(
+        self,
+        current_distance_m: float,
+        *,
+        convergence_since: datetime | None = None,
+    ) -> tuple[bool, str | None]:
         """
         근접 이벤트의 신뢰도를 확인.
 
@@ -524,16 +593,21 @@ class AdjacencyManager:
         self.data.a_updates_in_window = a_updates
         self.data.b_updates_in_window = b_updates
 
-        if a_updates < self.min_updates_for_proximity:
+        # A zone is a fixed place: it only changes state when people come and
+        # go, so its update count says nothing about location reliability.
+        if not self._is_static_side("a") and a_updates < self.min_updates_for_proximity:
             return False, f"insufficient_updates_a ({a_updates}<{self.min_updates_for_proximity})"
-        if b_updates < self.min_updates_for_proximity:
+        if not self._is_static_side("b") and b_updates < self.min_updates_for_proximity:
             return False, f"insufficient_updates_b ({b_updates}<{self.min_updates_for_proximity})"
 
         # 2. 수렴 속도 확인 (거리가 줄어드는 속도)
-        convergence = self._calculate_convergence_speed(current_distance_m)
+        convergence = self._calculate_convergence_speed(
+            current_distance_m, convergence_since
+        )
         self.data.convergence_speed_kmh = convergence
 
-        if convergence is not None:
+        # max_speed_kmh = 0 turns the speed filter off, and this check with it.
+        if convergence is not None and self.max_speed_kmh > 0:
             # 두 객체가 서로 다가오는 최대 속도 = 양쪽 max_speed 합산
             max_convergence = self.max_speed_kmh * 2
             if convergence > max_convergence:
@@ -548,7 +622,13 @@ class AdjacencyManager:
 
         return True, None
 
-    def _update_movement(self, coords_a: tuple[float, float] | None, coords_b: tuple[float, float] | None) -> str | None:
+    def _update_movement(
+        self,
+        coords_a: tuple[float, float] | None,
+        coords_b: tuple[float, float] | None,
+        *,
+        initialize_only: bool = False,
+    ) -> str | None:
         """
         Update per-side movement and detect unrealistic movement or resync.
 
@@ -556,6 +636,10 @@ class AdjacencyManager:
         resynchronisation or unrealistic speed.  When an error is returned the
         caller should treat the entire update as invalid and refrain from
         updating the distance or firing events.
+
+        ``initialize_only`` is used by forced recalculations (startup, refresh
+        button): they set up a side seen for the first time but never count as
+        movement, so they cannot hide a silent source from resync detection.
         """
         now = dt_util.utcnow()
 
@@ -572,6 +656,21 @@ class AdjacencyManager:
 
             # If no new coords we can't compute movement for this side
             if coords is None:
+                return None
+
+            if initialize_only and prev_coords is not None and last_fix is not None:
+                return None
+
+            # A zone does not move: no speed, no silence or resync handling.
+            if self._is_static_side(side):
+                if side == "a":
+                    self.a_prev_coords = coords
+                    self.a_last_fix = now
+                    self.a_speed_kmh = None
+                else:
+                    self.b_prev_coords = coords
+                    self.b_last_fix = now
+                    self.b_speed_kmh = None
                 return None
 
             # Silence detection: if last fix exists and a long period has elapsed, mark as resync
@@ -634,6 +733,17 @@ class AdjacencyManager:
 
             # Distance in meters between previous and current coords
             dist_m = ha_distance(prev_coords[0], prev_coords[1], coords[0], coords[1])
+            if dist_m is None:
+                # The distance formula did not converge: no speed for this fix.
+                if side == "a":
+                    self.a_prev_coords = coords
+                    self.a_last_fix = now
+                    self.a_speed_kmh = None
+                else:
+                    self.b_prev_coords = coords
+                    self.b_last_fix = now
+                    self.b_speed_kmh = None
+                return None
             speed_kmh = (dist_m / dt_seconds) * 3.6
 
             # Update speed attribute

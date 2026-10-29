@@ -4,8 +4,10 @@ import asyncio
 import importlib
 import logging
 import math
+import re
 import sys
 import types
+import unicodedata
 import unittest
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -22,6 +24,7 @@ def _install_homeassistant_stubs() -> None:
     event = types.ModuleType("homeassistant.helpers.event")
     device_registry = types.ModuleType("homeassistant.helpers.device_registry")
     entity_registry = types.ModuleType("homeassistant.helpers.entity_registry")
+    restore_state = types.ModuleType("homeassistant.helpers.restore_state")
     util = types.ModuleType("homeassistant.util")
     dt_mod = types.ModuleType("homeassistant.util.dt")
     location = types.ModuleType("homeassistant.util.location")
@@ -35,11 +38,26 @@ def _install_homeassistant_stubs() -> None:
     class ServiceNotFound(Exception):
         pass
 
+    class RestoreEntity:
+        """Stand-in for the Home Assistant mixin that saves entity states."""
+
+        async def async_added_to_hass(self) -> None:
+            self.restore_registered = True
+
+    class ExtraStoredData:
+        """Stand-in for extra data saved with a restored entity state."""
+
+        def as_dict(self) -> dict:
+            raise NotImplementedError
+
     def callback(func):
         return func
 
     def async_dispatcher_send(*_args, **_kwargs):
         return None
+
+    def async_dispatcher_connect(*_args, **_kwargs):
+        return lambda: None
 
     def async_call_later(*_args, **_kwargs):
         return lambda: None
@@ -47,11 +65,30 @@ def _install_homeassistant_stubs() -> None:
     def async_track_state_change_event(*_args, **_kwargs):
         return lambda: None
 
+    def async_track_time_interval(*_args, **_kwargs):
+        return lambda: None
+
     def async_get(_hass):
         return _Registry()
 
+    def async_get_restore_data(_hass):
+        return types.SimpleNamespace(last_states={})
+
     def utcnow() -> datetime:
         return datetime.now(timezone.utc)
+
+    def slugify(text: str | None, *, separator: str = "_") -> str:
+        """ASCII behaviour of homeassistant.util.slugify (python-slugify).
+
+        python-slugify turns quotes into a separator: "Bobby's" -> "bobby_s".
+        """
+        if text == "" or text is None:
+            return ""
+        text = re.sub(r"[']+", "-", str(text))
+        text = unicodedata.normalize("NFKD", text)
+        text = text.encode("ascii", "ignore").decode("ascii").lower()
+        slug = re.sub(r"[^a-z0-9]+", separator, text).strip(separator)
+        return slug or "unknown"
 
     def distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         radius_m = 6_371_000
@@ -70,18 +107,25 @@ def _install_homeassistant_stubs() -> None:
     core.callback = callback
     exceptions.ServiceNotFound = ServiceNotFound
     dispatcher.async_dispatcher_send = async_dispatcher_send
+    dispatcher.async_dispatcher_connect = async_dispatcher_connect
     event.async_call_later = async_call_later
     event.async_track_state_change_event = async_track_state_change_event
+    event.async_track_time_interval = async_track_time_interval
     device_registry.async_get = async_get
     entity_registry.async_get = async_get
+    restore_state.RestoreEntity = RestoreEntity
+    restore_state.ExtraStoredData = ExtraStoredData
+    restore_state.async_get = async_get_restore_data
     dt_mod.utcnow = utcnow
     location.distance = distance
     helpers.dispatcher = dispatcher
     helpers.event = event
     helpers.device_registry = device_registry
     helpers.entity_registry = entity_registry
+    helpers.restore_state = restore_state
     util.dt = dt_mod
     util.location = location
+    util.slugify = slugify
     homeassistant.config_entries = config_entries
     homeassistant.core = core
     homeassistant.exceptions = exceptions
@@ -98,6 +142,7 @@ def _install_homeassistant_stubs() -> None:
         "homeassistant.helpers.event": event,
         "homeassistant.helpers.device_registry": device_registry,
         "homeassistant.helpers.entity_registry": entity_registry,
+        "homeassistant.helpers.restore_state": restore_state,
         "homeassistant.util": util,
         "homeassistant.util.dt": dt_mod,
         "homeassistant.util.location": location,
@@ -107,6 +152,9 @@ def _install_homeassistant_stubs() -> None:
 
 class _Registry:
     def async_get(self, _key):
+        return None
+
+    def async_get_entity_id(self, _domain, _platform, _unique_id):
         return None
 
 
