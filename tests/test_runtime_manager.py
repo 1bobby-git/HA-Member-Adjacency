@@ -66,7 +66,7 @@ class RuntimeManagerTests(unittest.IsolatedAsyncioTestCase):
     async def test_reliable_transition_fires_normal_enter_after_unreliable_entry(self) -> None:
         manager = self.make_manager(min_updates=2)
 
-        await manager.async_refresh(force_both=True)
+        await manager.async_refresh(changed_sides={"a", "b"})
 
         self.assertTrue(manager._raw_proximity)
         self.assertFalse(manager.data.proximity)
@@ -75,7 +75,7 @@ class RuntimeManagerTests(unittest.IsolatedAsyncioTestCase):
             [event_type for event_type, _data in manager.hass.bus.events],
         )
 
-        await manager.async_refresh(force_both=True)
+        await manager.async_refresh(changed_sides={"a", "b"})
 
         event_types = [event_type for event_type, _data in manager.hass.bus.events]
         self.assertTrue(manager.data.proximity)
@@ -85,7 +85,7 @@ class RuntimeManagerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_sample_marks_entities_unavailable_without_false_leave(self) -> None:
         manager = self.make_manager()
-        await manager.async_refresh(force_both=True)
+        await manager.async_refresh(changed_sides={"a", "b"})
         self.assertTrue(manager.data.proximity)
 
         manager._coords_and_acc = lambda entity_id: (  # type: ignore[method-assign]

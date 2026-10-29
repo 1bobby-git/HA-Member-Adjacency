@@ -4,15 +4,24 @@ This module keeps the public behavior of :mod:`manager` while ensuring that
 movement and reliability counters are updated only for the source entity that
 actually changed. It also separates raw distance hysteresis from the reliable
 proximity state exposed to automations.
+
+The reliability gate decides when proximity starts. Once proximity is on, only
+the exit threshold ends it, so a source that goes quiet while two people stay
+together does not produce a leave/enter pair. The proximity state saved by the
+binary sensor is restored before the first calculation, so a restart or an
+options reload does not replay enter events.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Collection
+from collections.abc import Callable, Collection
+from datetime import datetime
 from typing import Any
 
 from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import restore_state
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
 from homeassistant.util import dt as dt_util
@@ -41,6 +50,7 @@ from .const import (
     DEFAULT_RESYNC_HOLD_S,
     DEFAULT_RESYNC_SILENCE_S,
     DEFAULT_UPDATE_WINDOW_S,
+    DOMAIN,
     EVENT_ENTER,
     EVENT_ENTER_UNRELIABLE,
     EVENT_LEAVE,
@@ -48,6 +58,21 @@ from .const import (
 )
 from .manager import AdjacencyManager as BaseAdjacencyManager
 from .manager import _bucket, _get
+
+# Re-check a held side this long after its resync hold ends, so the wall clock
+# is past the hold even when the timer fires slightly early.
+HOLD_END_MARGIN_S = 1.0
+
+
+def _parse_utc(value: Any) -> datetime | None:
+    """Parse a saved timezone-aware ISO timestamp."""
+    if not isinstance(value, str):
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else None
 
 
 class AdjacencyManager(BaseAdjacencyManager):
@@ -59,9 +84,11 @@ class AdjacencyManager(BaseAdjacencyManager):
         self._refresh_lock = asyncio.Lock()
         self._raw_proximity = False
         self._refresh_tasks: set[asyncio.Task] = set()
+        self._hold_end_timers: dict[str, Callable[[], None]] = {}
 
     async def async_start(self) -> None:
-        """Perform the initial calculation and subscribe to both source states."""
+        """Continue the saved state, calculate once and follow both sources."""
+        self.async_restore_state()
         await self.async_refresh(force_both=True)
 
         @callback
@@ -79,16 +106,92 @@ class AdjacencyManager(BaseAdjacencyManager):
     async def async_stop(self) -> None:
         """Cancel debounce, listeners and any in-flight refresh before unload."""
         await super().async_stop()
+        timers = list(self._hold_end_timers.values())
+        self._hold_end_timers.clear()
+        for cancel in timers:
+            cancel()
         tasks = list(self._refresh_tasks)
         self._refresh_tasks.clear()
         for task in tasks:
             task.cancel()
 
-    def _schedule_refresh(self, changed_sides: set[str]) -> None:
-        """Create a tracked refresh task so unload can cancel it cleanly."""
-        task = self.hass.async_create_task(
-            self.async_refresh(changed_sides=changed_sides)
+    # --- saved state ---
+    def _stored_state(self, entity_id: str):
+        """Saved state of an entity from Home Assistant's restore data."""
+        data = restore_state.async_get(self.hass)
+        get_stored_state = getattr(data, "async_get_stored_state", None)
+        if callable(get_stored_state):
+            # Newer Home Assistant versions index saved states by entity
+            # registry entry and expose this lookup instead of last_states.
+            return get_stored_state(entity_id)
+        return data.last_states.get(entity_id)
+
+    def restore_snapshot(self) -> dict[str, Any]:
+        """Proximity state the binary sensor saves for the next start."""
+        return {
+            "proximity": bool(self.data.proximity),
+            "raw_proximity": bool(self._raw_proximity),
+            "proximity_update_count": int(self.data.proximity_update_count),
+            "proximity_since": (
+                self._proximity_since.isoformat() if self._proximity_since else None
+            ),
+            "last_changed": self.data.last_changed,
+            "last_entered": self.data.last_entered,
+            "last_left": self.data.last_left,
+        }
+
+    @callback
+    def async_restore_state(self) -> None:
+        """Seed proximity from the state Home Assistant saved for this entry.
+
+        Nothing is restored on a first install, after upgrading from a version
+        that did not save the state, or when the saved data is malformed.
+        """
+        try:
+            entity_id = er.async_get(self.hass).async_get_entity_id(
+                "binary_sensor", DOMAIN, f"{self.entry.entry_id}_proximity"
+            )
+            stored = self._stored_state(entity_id) if entity_id else None
+        except (AttributeError, KeyError):
+            return
+        extra = getattr(stored, "extra_data", None)
+        saved = extra.as_dict() if extra is not None else None
+        if not isinstance(saved, dict) or not isinstance(saved.get("proximity"), bool):
+            return
+
+        proximity = saved["proximity"]
+        raw_proximity = proximity or saved.get("raw_proximity") is True
+        count = saved.get("proximity_update_count")
+        if not proximity:
+            count = 0
+        elif isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            count = 1
+
+        self.data.proximity = proximity
+        self._raw_proximity = raw_proximity
+        setattr(self.data, "raw_proximity", raw_proximity)
+        self.data.proximity_update_count = count
+        for key in ("last_changed", "last_entered", "last_left"):
+            value = saved.get(key)
+            if isinstance(value, str):
+                setattr(self.data, key, value)
+        self._proximity_since = (
+            _parse_utc(saved.get("proximity_since")) if proximity else None
         )
+
+    # --- refresh scheduling ---
+    def _schedule_refresh(
+        self,
+        changed_sides: set[str] | None = None,
+        *,
+        force_both: bool = False,
+    ) -> None:
+        """Create a tracked refresh task so unload can cancel it cleanly."""
+        if force_both:
+            coro = self.async_refresh(force_both=True)
+        else:
+            coro = self.async_refresh(changed_sides=changed_sides)
+        task = self.hass.async_create_task(coro)
         self._refresh_tasks.add(task)
         task.add_done_callback(self._refresh_tasks.discard)
 
@@ -130,13 +233,37 @@ class AdjacencyManager(BaseAdjacencyManager):
         self._cancel_debounce = async_call_later(self.hass, self.debounce_s, _later)
 
     async def async_force_refresh(self) -> None:
-        """Recalculate both sources after cancelling any pending debounce."""
+        """Recalculate now; a source update still in debounce is processed as one."""
         if self._cancel_debounce:
             self._cancel_debounce()
             self._cancel_debounce = None
+        pending = set(self._pending_changed_sides)
         self._pending_changed_sides.clear()
-        await self.async_refresh(force_both=True)
+        if pending:
+            await self.async_refresh(changed_sides=pending)
+        else:
+            await self.async_refresh(force_both=True)
 
+    def _schedule_hold_end_refresh(self, side: str) -> None:
+        """Re-check once the resync hold of ``side`` is over."""
+        until = self.a_resync_until if side == "a" else self.b_resync_until
+        if until is None:
+            return
+        cancel = self._hold_end_timers.pop(side, None)
+        if cancel is not None:
+            cancel()
+        delay = (
+            max(0.0, (until - dt_util.utcnow()).total_seconds()) + HOLD_END_MARGIN_S
+        )
+
+        @callback
+        def _hold_ended(_now) -> None:
+            self._hold_end_timers.pop(side, None)
+            self._schedule_refresh(force_both=True)
+
+        self._hold_end_timers[side] = async_call_later(self.hass, delay, _hold_ended)
+
+    # --- calculation ---
     def _event_data(
         self,
         meters_raw: float,
@@ -170,16 +297,28 @@ class AdjacencyManager(BaseAdjacencyManager):
         self.data.last_error = reason
         async_dispatcher_send(self.hass, self.signal)
 
+    def _hold_sample(self, reason: str) -> None:
+        """Skip a sample inside a resync hold and keep the current state."""
+        self.data.last_error = reason
+        self._schedule_hold_end_refresh(reason.rsplit("_", 1)[-1])
+        async_dispatcher_send(self.hass, self.signal)
+
     async def async_refresh(
         self,
         *,
         changed_sides: Collection[str] | None = None,
         force_both: bool = False,
     ) -> None:
-        """Recompute state using only genuine source updates for movement history."""
+        """Recompute state using only genuine source updates for movement history.
+
+        A forced refresh (startup, refresh button, end of a resync hold) uses
+        the current coordinates of both sides but is not a location update:
+        it is not counted for reliability and does not move the last fix.
+        """
+        forced = force_both or changed_sides is None
         effective_changed = (
             {"a", "b"}
-            if force_both or changed_sides is None
+            if forced
             else {side for side in changed_sides if side in {"a", "b"}}
         )
         if not effective_changed:
@@ -245,23 +384,43 @@ class AdjacencyManager(BaseAdjacencyManager):
                     self._mark_invalid("accuracy_filtered_b")
                     return
 
+            previous_fix = {"a": self.a_last_fix, "b": self.b_last_fix}
             movement_error = super()._update_movement(
                 coords_a if "a" in effective_changed else None,
                 coords_b if "b" in effective_changed else None,
+                initialize_only=forced,
             )
             if movement_error is not None:
-                self._mark_invalid(movement_error)
+                if movement_error.startswith("resync_"):
+                    self._hold_sample(movement_error)
+                else:
+                    self._mark_invalid(movement_error)
                 return
 
-            for side in sorted(effective_changed):
-                self._record_update(side)
+            if not forced:
+                for side in sorted(effective_changed):
+                    self._record_update(side)
 
             lat1, lon1 = coords_a
             lat2, lon2 = coords_b
-            meters_raw = float(ha_distance(lat1, lon1, lat2, lon2))
+            distance = ha_distance(lat1, lon1, lat2, lon2)
+            if distance is None:
+                self._mark_invalid("distance_unavailable")
+                return
+            meters_raw = float(distance)
 
+            # The distance change covers each moved side's travel since its
+            # previous fix, not only the time since the last calculation.
+            moved_since = [
+                previous_fix[side]
+                for side in effective_changed
+                if not forced
+                and previous_fix[side] is not None
+                and not self._is_static_side(side)
+            ]
             reliable, unreliable_reason = self._check_proximity_reliability(
-                meters_raw
+                meters_raw,
+                convergence_since=min(moved_since) if moved_since else None,
             )
             self.data.proximity_reliable = reliable
             self.data.unreliable_reason = unreliable_reason
@@ -282,8 +441,11 @@ class AdjacencyManager(BaseAdjacencyManager):
                 if previous_raw
                 else meters_raw <= float(self.entry_th)
             )
-            proximity = raw_proximity and (
-                reliable or not self.require_reliable_proximity
+            gate_open = reliable or not self.require_reliable_proximity
+            # Reliability decides when proximity starts; once it is on, only
+            # the exit threshold ends it.
+            proximity = (
+                raw_proximity if previous_proximity else raw_proximity and gate_open
             )
             self._raw_proximity = raw_proximity
             setattr(self.data, "raw_proximity", raw_proximity)
@@ -333,7 +495,9 @@ class AdjacencyManager(BaseAdjacencyManager):
                             0,
                         ),
                     )
-            elif proximity:
+            elif proximity and gate_open:
+                # Unreliable samples keep proximity on but are not reported
+                # as proximity updates.
                 self.data.proximity_update_count += 1
                 event_data = self._event_data(
                     meters_raw,

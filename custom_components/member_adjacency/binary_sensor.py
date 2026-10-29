@@ -4,17 +4,24 @@ Binary sensor platform for the Member Adjacency component.
 The binary sensor reports the reliable proximity state. When either source
 location is missing or rejected by an accuracy/movement filter, Home Assistant
 marks the entity unavailable instead of exposing a stale on/off value.
+
+The entity is a RestoreEntity: Home Assistant saves the manager's proximity
+state with it, and the manager continues from that state after a restart or
+reload instead of starting over.
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.restore_state import ExtraStoredData, RestoreEntity
 
 from .const import DOMAIN
-from .manager import AdjacencyManager
+from .runtime_manager import AdjacencyManager
 
 
 async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> None:
@@ -35,7 +42,17 @@ async def async_setup_entry(hass: HomeAssistant, entry, async_add_entities) -> N
     async_add_entities([MemberAdjacencyProximityBinary(manager)])
 
 
-class MemberAdjacencyProximityBinary(BinarySensorEntity):
+class ProximityRestoreData(ExtraStoredData):
+    """Manager proximity state saved alongside the binary sensor state."""
+
+    def __init__(self, data: dict[str, Any]) -> None:
+        self._data = data
+
+    def as_dict(self) -> dict[str, Any]:
+        return self._data
+
+
+class MemberAdjacencyProximityBinary(BinarySensorEntity, RestoreEntity):
     """Binary sensor indicating reliable proximity between two entities."""
 
     _attr_should_poll = False
@@ -50,12 +67,19 @@ class MemberAdjacencyProximityBinary(BinarySensorEntity):
         self._unsub = None
 
     async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+
         @callback
         def _updated() -> None:
             self.async_write_ha_state()
 
         self._unsub = async_dispatcher_connect(self.hass, self.mgr.signal, _updated)
         self.async_on_remove(self._unsub)
+
+    @property
+    def extra_restore_state_data(self) -> ProximityRestoreData:
+        """Save the proximity state even while the entity is unavailable."""
+        return ProximityRestoreData(self.mgr.restore_snapshot())
 
     @property
     def device_info(self):

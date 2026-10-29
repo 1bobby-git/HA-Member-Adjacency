@@ -11,6 +11,7 @@ underlying :class:`AdjacencyManager`.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -23,9 +24,13 @@ from homeassistant.const import UnitOfLength
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.event import async_track_time_interval
 
 from .const import DOMAIN, DEFAULT_NAME_KO
 from .manager import AdjacencyManager
+
+# The proximity duration is shown in whole minutes.
+DURATION_TICK = timedelta(minutes=1)
 
 
 def _round1(x: float) -> float:
@@ -82,12 +87,14 @@ class _Base(SensorEntity):
         self._unsub = None
 
     async def async_added_to_hass(self) -> None:
-        @callback
-        def _updated() -> None:
-            self.async_write_ha_state()
-
-        self._unsub = async_dispatcher_connect(self.hass, self.mgr.signal, _updated)
+        self._unsub = async_dispatcher_connect(
+            self.hass, self.mgr.signal, self._handle_manager_update
+        )
         self.async_on_remove(self._unsub)
+
+    @callback
+    def _handle_manager_update(self) -> None:
+        self.async_write_ha_state()
 
     @property
     def device_info(self) -> dict[str, Any]:
@@ -235,7 +242,11 @@ class MemberAdjacencyBucketSensor(_Base):
 
 
 class MemberAdjacencyProximityDurationSensor(_Base):
-    """Sensor reporting the duration of the current proximity state."""
+    """Sensor reporting the duration of the current proximity state.
+
+    Source updates are rare while two people stay together, so the sensor
+    also rewrites its state every minute while proximity is on.
+    """
 
     _attr_icon = "mdi:timer-outline"
 
@@ -243,6 +254,38 @@ class MemberAdjacencyProximityDurationSensor(_Base):
         super().__init__(mgr)
         self._attr_unique_id = f"{mgr.entry.entry_id}_proximity_duration"
         self._attr_name = f"{mgr.get_tracker_name()} → {mgr.get_base_name()} 근접 지속시간"
+        self._cancel_tick = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(self._stop_tick)
+        self._sync_tick()
+
+    @callback
+    def _handle_manager_update(self) -> None:
+        self._sync_tick()
+        self.async_write_ha_state()
+
+    @callback
+    def _sync_tick(self) -> None:
+        """Run the minute tick only while proximity is on."""
+        if not self.mgr.data.proximity:
+            self._stop_tick()
+        elif self._cancel_tick is None:
+            self._cancel_tick = async_track_time_interval(
+                self.hass, self._tick, DURATION_TICK
+            )
+
+    @callback
+    def _stop_tick(self) -> None:
+        if self._cancel_tick is not None:
+            self._cancel_tick()
+            self._cancel_tick = None
+
+    @callback
+    def _tick(self, _now) -> None:
+        self._sync_tick()
+        self.async_write_ha_state()
 
     @property
     def native_value(self) -> str:

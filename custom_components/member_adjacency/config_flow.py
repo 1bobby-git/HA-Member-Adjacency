@@ -52,36 +52,9 @@ from .const import (
     DOMAIN,
     GEO_SUFFIX,
 )
-
-
-def _try_get_coords_from_state(state) -> tuple[float, float] | None:
-    """Try to extract coordinates from an entity state."""
-    if state is None:
-        return None
-    attrs = state.attributes or {}
-
-    loc = attrs.get("Location")
-    if isinstance(loc, (list, tuple)) and len(loc) == 2:
-        try:
-            return (float(loc[0]), float(loc[1]))
-        except (TypeError, ValueError):
-            return None
-
-    if "latitude" in attrs and "longitude" in attrs:
-        try:
-            return (float(attrs["latitude"]), float(attrs["longitude"]))
-        except (TypeError, ValueError):
-            return None
-
-    if isinstance(state.state, str) and "," in state.state:
-        parts = [p.strip() for p in state.state.split(",")]
-        if len(parts) == 2:
-            try:
-                return (float(parts[0]), float(parts[1]))
-            except (TypeError, ValueError):
-                return None
-
-    return None
+# Same coordinate check as the runtime, so the setup form cannot accept an
+# entity whose coordinates the manager will reject (NaN, out of range).
+from .manager import _try_get_coords_from_state
 
 
 def _device_name_for_entity(hass: HomeAssistant, entity_id: str) -> str | None:

@@ -26,30 +26,36 @@
 
 - **거리 센서(distance)**
   - 두 엔티티 간 거리를 계산합니다.
-  - 기본 동작: 1000m 미만은 **m**, 1000m 이상은 **km**로 자동 전환
+  - 상태값은 항상 **m** 단위입니다.
+  - `display_value`·`display_unit`·`display_text` 속성은 1000m 미만은 **m**, 1000m 이상은 **km**로 바꿔 보여 줍니다.
   - 표시 정밀도: **소수점 1자리**
-  - 옵션 `force_meters`를 켜면 항상 **m**로 고정
+  - 옵션 `force_meters`를 켜면 표시 속성도 항상 **m**로 고정
 - **근접 바이너리 센서(proximity)**
   - 임계값 이내 접근 여부를 `on/off`로 제공합니다.
   - 히스테리시스:
     - `entry_threshold_m` 이하로 들어오면 **on**
     - `exit_threshold_m` 이상으로 벗어나면 **off**
+  - GPS 신뢰도 조건(고급 설정)은 **on이 될 때만** 적용합니다. on이 된 뒤에는 거리만으로 off가 됩니다.
+  - Home Assistant 재시작이나 옵션 저장 뒤에도 이전 근접 상태를 이어 갑니다.
 - **구간 센서(bucket)**
   - 거리 구간: `very_near / near / mid / far / very_far`
 - **근접 지속시간 센서(proximity duration)**
   - `5분`, `1시간 20분`처럼 사람이 읽기 쉬운 형태로 표시합니다.
+  - 근접 중에는 1분마다 갱신됩니다.
   - 숫자(분)는 `attributes.proximity_duration_min`로도 제공됩니다.
 - **근접 업데이트 카운트(proximity_update_count)**
   - 근접 진입 후 위치 업데이트 횟수를 추적합니다.
   - `1` = 첫 번째 감지, `2+` = 이후 업데이트, `0` = 근접 이탈
   - 자동화에서 **"정확히 1회만 알림"** 구현 시 `input_boolean` 잠금 없이 사용 가능
 - **새로고침 버튼(refresh)**
-  - 버튼을 누르면 "소스 위치 업데이트"를 요청한 뒤, 즉시 재계산합니다.
+  - 버튼을 누르면 휴대폰(`mobile_app`)에 위치 갱신 요청(`request_location_update`)을 보내고 `homeassistant.update_entity`를 호출한 뒤, 즉시 재계산합니다.
+  - 재계산 자체는 위치 갱신 횟수에 더하지 않습니다. 휴대폰이 보낸 새 위치가 들어오면 그때 갱신으로 셉니다.
 - **정확도 필터/디바운스**
   - 정확도 속성이 있을 경우 `max_accuracy_m` 기준 필터
   - `debounce_seconds`로 잦은 업데이트 묶음 처리
 - **이벤트(Event) 발행**
   - `member_adjacency_enter` : 근접 진입 (1회)
+  - `member_adjacency_enter_unreliable` : 거리는 가깝지만 GPS 신뢰도 조건을 채우지 못함 (1회)
   - `member_adjacency_leave` : 근접 이탈 (1회)
   - `member_adjacency_proximity_update` : 근접 상태에서 위치 업데이트마다 발생
 
@@ -97,9 +103,22 @@
 | `exit_threshold_m` | 이탈 임계값 (이 값 이상이면 proximity=off) |
 | `debounce_seconds` | 디바운스 (초) |
 | `max_accuracy_m` | 최대 허용 정확도 (m, 0=무시) |
-| `force_meters` | 단위를 항상 m로 고정 |
+| `force_meters` | 표시 단위를 항상 m로 고정 |
 
 > `exit_threshold_m >= entry_threshold_m` 이어야 합니다.
+
+고급 설정(GPS 신뢰도·재동기화):
+
+| 옵션 | 기본값 | 설명 |
+|------|--------|------|
+| `resync_silence_s` | 600 | 이 시간(초) 동안 갱신이 없다가 들어온 위치를 재동기화로 보고 보류 |
+| `resync_hold_s` | 60 | 재동기화 보류 시간(초). 보류 중에는 이전 상태를 유지하고, 끝나면 다시 계산 |
+| `max_speed_kmh` | 150 | 이 속도를 넘는 위치 이동은 무시 (0=끄기, 접근 속도 검사도 꺼짐) |
+| `min_updates_for_proximity` | 3 | 근접 진입을 신뢰하려면 양쪽이 `update_window_s` 안에 갱신돼야 하는 횟수 |
+| `update_window_s` | 300 | 갱신 횟수를 세는 시간 범위(초) |
+| `require_reliable_proximity` | 켜짐 | 켜면 신뢰도 조건을 채워야 근접 on과 `enter` 이벤트가 발생하고, 못 채우면 `enter_unreliable` 이벤트만 발생 |
+
+> `zone.*` 엔티티는 위치가 고정이므로 갱신 횟수 조건과 재동기화 보류를 적용하지 않습니다.
 
 ---
 
@@ -124,8 +143,9 @@ A-B 한 쌍을 추가하면, 해당 쌍은 **하나의 기기(Device)** 로 묶�
 | 이벤트 | 발생 시점 | 포함 데이터 |
 |--------|----------|-------------|
 | `member_adjacency_enter` | 근접 진입 (1회) | entity_a, entity_b, distance_m, proximity_update_count |
+| `member_adjacency_enter_unreliable` | 거리는 진입 임계값 안이지만 신뢰도 조건 미충족 (1회) | entity_a, entity_b, distance_m, proximity_reliable, unreliable_reason |
 | `member_adjacency_leave` | 근접 이탈 (1회) | entity_a, entity_b, distance_m |
-| `member_adjacency_proximity_update` | 근접 중 위치 업데이트마다 | entity_a, entity_b, distance_m, proximity_update_count, is_first_update |
+| `member_adjacency_proximity_update` | 근접 중 위치 업데이트마다 (`require_reliable_proximity`가 켜져 있으면 신뢰할 수 있는 업데이트만) | entity_a, entity_b, distance_m, proximity_update_count, is_first_update |
 
 ---
 
@@ -175,5 +195,19 @@ MIT License
 - 설정 항목 언로드·리로드 시 예약된 새로고침 작업을 취소해, 해제된 매니저에서 이벤트가 뒤늦게 발생하거나 작업이 누수되지 않도록 했습니다.
 - 두 대상이 멈춰 있어 수렴 속도가 정확히 `0.0 km/h`일 때 `member_adjacency_enter` 이벤트가 값을 `null` 대신 `0.0`으로 전달하도록 수정했습니다.
 - 엔티티 ID·unique ID·설정 항목 키·서비스·이벤트 이름은 변경하지 않았습니다.
+
+실제 Home Assistant 설치 및 기기 검증은 별도입니다.
+
+## 통합 업데이트 1.6.8
+
+- 근접이 켜진 뒤에는 이탈 임계값을 넘을 때만 꺼집니다. 함께 있는 동안 한쪽 위치 갱신이 뜸해져 `leave`와 `enter`가 반복되던 문제를 고쳤습니다. 근접 중 신뢰할 수 없는 갱신은 `proximity_update`로 보내지 않습니다.
+- `zone` 엔티티를 기준으로 한 쌍도 근접이 켜집니다.
+- 오래 조용하던 위치가 들어와 재동기화로 보류될 때 근접 센서가 `unavailable`이 되지 않고 이전 상태를 유지합니다. 보류가 끝나면 다시 계산합니다.
+- 재시작·옵션 저장 뒤에도 근접 상태·진입 시각·업데이트 횟수를 이어 가므로 `enter`가 다시 발생하지 않습니다. 저장은 1.6.8부터 시작하므로, 업데이트 직후 첫 시작은 예전처럼 처음부터 계산합니다.
+- 새로고침 버튼이 휴대폰에 위치 갱신 요청을 실제로 보냅니다(`notify.mobile_app_<기기 이름>`, `person`은 현재 위치를 제공하는 기기 추적기).
+- 근접 지속시간 센서가 근접 중 1분마다 갱신됩니다.
+- 시작·새로고침 버튼의 재계산은 위치 갱신 횟수에 더하지 않습니다. 버튼을 여러 번 눌러 신뢰도 조건을 채울 수 없습니다.
+- `max_speed_kmh = 0`이면 접근 속도 검사도 끕니다. 거리 계산 실패·플랫폼 설정 실패 때도 오류 없이 정리합니다. 설정 화면도 NaN·범위 밖 좌표를 거부합니다.
+- 엔티티 ID·unique ID·설정 키·기본값·이벤트 이름과 payload 키·거리 계산은 변경하지 않았습니다.
 
 실제 Home Assistant 설치 및 기기 검증은 별도입니다.

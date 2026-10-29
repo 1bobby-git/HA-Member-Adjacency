@@ -48,8 +48,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a Member Adjacency entry."""
     manager = AdjacencyManager(hass, entry)
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = manager
-    await manager.async_start()
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    try:
+        await manager.async_start()
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception:
+        # Do not leave a running manager (state listener, timers) behind a
+        # failed setup.
+        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+        await manager.async_stop()
+        raise
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     return True
 
