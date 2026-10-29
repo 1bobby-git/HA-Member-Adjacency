@@ -249,6 +249,12 @@ class MemberAdjacencyProximityDurationSensor(_Base):
     """
 
     _attr_icon = "mdi:timer-outline"
+    # These two attributes change on every tick. Keeping them out of the
+    # recorder lets it reuse one attributes row while proximity lasts; the
+    # state itself already holds the duration.
+    _unrecorded_attributes = frozenset(
+        {"proximity_duration_min", "proximity_duration_human"}
+    )
 
     def __init__(self, mgr: AdjacencyManager) -> None:
         super().__init__(mgr)

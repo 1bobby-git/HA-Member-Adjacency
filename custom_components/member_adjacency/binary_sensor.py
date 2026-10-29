@@ -77,8 +77,15 @@ class MemberAdjacencyProximityBinary(BinarySensorEntity, RestoreEntity):
         self.async_on_remove(self._unsub)
 
     @property
-    def extra_restore_state_data(self) -> ProximityRestoreData:
-        """Save the proximity state even while the entity is unavailable."""
+    def extra_restore_state_data(self) -> ProximityRestoreData | None:
+        """Save the proximity state, also while the entity is unavailable.
+
+        Nothing is saved for a disabled entity: the manager keeps running
+        without it, so a saved state would go stale.
+        """
+        registry_entry = getattr(self, "registry_entry", None)
+        if registry_entry is not None and registry_entry.disabled:
+            return None
         return ProximityRestoreData(self.mgr.restore_snapshot())
 
     @property

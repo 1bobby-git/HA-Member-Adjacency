@@ -85,6 +85,7 @@ class AdjacencyManager(BaseAdjacencyManager):
         self._raw_proximity = False
         self._refresh_tasks: set[asyncio.Task] = set()
         self._hold_end_timers: dict[str, Callable[[], None]] = {}
+        self._stopped = False
 
     async def async_start(self) -> None:
         """Continue the saved state, calculate once and follow both sources."""
@@ -104,8 +105,14 @@ class AdjacencyManager(BaseAdjacencyManager):
         )
 
     async def async_stop(self) -> None:
-        """Cancel debounce, listeners and any in-flight refresh before unload."""
+        """Cancel debounce, listeners and any in-flight refresh before unload.
+
+        A stopped manager ignores refreshes that were already on their way,
+        such as a refresh-button press that is still waiting for the phone.
+        """
+        self._stopped = True
         await super().async_stop()
+        self._pending_changed_sides.clear()
         timers = list(self._hold_end_timers.values())
         self._hold_end_timers.clear()
         for cancel in timers:
@@ -145,13 +152,20 @@ class AdjacencyManager(BaseAdjacencyManager):
         """Seed proximity from the state Home Assistant saved for this entry.
 
         Nothing is restored on a first install, after upgrading from a version
-        that did not save the state, or when the saved data is malformed.
+        that did not save the state, while the proximity binary sensor is
+        disabled, or when the saved data is malformed.
         """
         try:
-            entity_id = er.async_get(self.hass).async_get_entity_id(
+            registry = er.async_get(self.hass)
+            entity_id = registry.async_get_entity_id(
                 "binary_sensor", DOMAIN, f"{self.entry.entry_id}_proximity"
             )
-            stored = self._stored_state(entity_id) if entity_id else None
+            if not entity_id:
+                return
+            if getattr(registry.async_get(entity_id), "disabled", False):
+                # A disabled sensor stops saving: its saved state is stale.
+                return
+            stored = self._stored_state(entity_id)
         except (AttributeError, KeyError):
             return
         extra = getattr(stored, "extra_data", None)
@@ -187,6 +201,8 @@ class AdjacencyManager(BaseAdjacencyManager):
         force_both: bool = False,
     ) -> None:
         """Create a tracked refresh task so unload can cancel it cleanly."""
+        if self._stopped:
+            return
         if force_both:
             coro = self.async_refresh(force_both=True)
         else:
@@ -209,6 +225,8 @@ class AdjacencyManager(BaseAdjacencyManager):
 
     def request_refresh(self, changed_entity_id: str | None = None) -> None:
         """Coalesce source updates without fabricating an update for the other side."""
+        if self._stopped:
+            return
         side = self._side_for_entity(changed_entity_id)
         if side is None:
             self._pending_changed_sides.update(("a", "b"))
@@ -246,6 +264,8 @@ class AdjacencyManager(BaseAdjacencyManager):
 
     def _schedule_hold_end_refresh(self, side: str) -> None:
         """Re-check once the resync hold of ``side`` is over."""
+        if self._stopped:
+            return
         until = self.a_resync_until if side == "a" else self.b_resync_until
         if until is None:
             return
@@ -297,10 +317,21 @@ class AdjacencyManager(BaseAdjacencyManager):
         self.data.last_error = reason
         async_dispatcher_send(self.hass, self.signal)
 
-    def _hold_sample(self, reason: str) -> None:
-        """Skip a sample inside a resync hold and keep the current state."""
-        self.data.last_error = reason
-        self._schedule_hold_end_refresh(reason.rsplit("_", 1)[-1])
+    def _held_sides(self) -> list[str]:
+        """Sides that are still inside their resync hold window."""
+        now = dt_util.utcnow()
+        return [
+            side
+            for side, until in (("a", self.a_resync_until), ("b", self.b_resync_until))
+            if until is not None and now < until
+        ]
+
+    def _hold_sample(self, sides: Collection[str]) -> None:
+        """Keep the current state until the resync hold of ``sides`` is over."""
+        ordered = sorted(sides)
+        self.data.last_error = f"resync_{ordered[0]}"
+        for side in ordered:
+            self._schedule_hold_end_refresh(side)
         async_dispatcher_send(self.hass, self.signal)
 
     async def async_refresh(
@@ -313,8 +344,12 @@ class AdjacencyManager(BaseAdjacencyManager):
 
         A forced refresh (startup, refresh button, end of a resync hold) uses
         the current coordinates of both sides but is not a location update:
-        it is not counted for reliability and does not move the last fix.
+        it is not counted for reliability, does not move the last fix and
+        does not fire ``proximity_update``. While either side is inside its
+        resync hold the state is kept, whatever triggered the refresh.
         """
+        if self._stopped:
+            return
         forced = force_both or changed_sides is None
         effective_changed = (
             {"a", "b"}
@@ -325,6 +360,8 @@ class AdjacencyManager(BaseAdjacencyManager):
             return
 
         async with self._refresh_lock:
+            if self._stopped:
+                return
             self.entry_th = int(
                 _get(self.entry, CONF_ENTRY_THRESHOLD_M, DEFAULT_ENTRY_THRESHOLD_M)
             )
@@ -392,9 +429,20 @@ class AdjacencyManager(BaseAdjacencyManager):
             )
             if movement_error is not None:
                 if movement_error.startswith("resync_"):
-                    self._hold_sample(movement_error)
+                    self._hold_sample([movement_error.rsplit("_", 1)[-1]])
                 else:
                     self._mark_invalid(movement_error)
+                return
+
+            held = self._held_sides()
+            if held:
+                # The held side's coordinates are its suspect fix: do not
+                # decide proximity on them before the hold ends. A genuine
+                # update of the other side still counts.
+                if not forced:
+                    for side in sorted(effective_changed - set(held)):
+                        self._record_update(side)
+                self._hold_sample(held)
                 return
 
             if not forced:
@@ -495,9 +543,9 @@ class AdjacencyManager(BaseAdjacencyManager):
                             0,
                         ),
                     )
-            elif proximity and gate_open:
-                # Unreliable samples keep proximity on but are not reported
-                # as proximity updates.
+            elif proximity and gate_open and not forced:
+                # Unreliable samples and recalculations keep proximity on but
+                # are not reported as proximity updates.
                 self.data.proximity_update_count += 1
                 event_data = self._event_data(
                     meters_raw,

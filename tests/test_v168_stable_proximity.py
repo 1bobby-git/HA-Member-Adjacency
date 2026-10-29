@@ -181,10 +181,19 @@ class _Case(unittest.IsolatedAsyncioTestCase):
         if tasks:
             await asyncio.gather(*tasks)
 
-    def saved_state(self, data: dict, *, registry_indexed: bool = False) -> None:
+    def saved_state(
+        self,
+        data: dict,
+        *,
+        registry_indexed: bool = False,
+        disabled: bool = False,
+    ) -> None:
         """Make Home Assistant's restore data hold ``data`` for this entry."""
+        registry_entry = types.SimpleNamespace(disabled=disabled)
         registry = types.SimpleNamespace(
-            async_get=lambda _entity_id: None,
+            async_get=lambda entity_id: (
+                registry_entry if entity_id == PROXIMITY_ENTITY_ID else None
+            ),
             async_get_entity_id=lambda domain, platform, unique_id: (
                 PROXIMITY_ENTITY_ID
                 if (domain, platform, unique_id)
@@ -358,6 +367,44 @@ class ResyncHoldTests(_Case):
 
         self.assertTrue(self.timers.calls[0].cancelled)
 
+    async def test_refresh_button_during_hold_keeps_state(self) -> None:
+        manager = self.make_manager()
+        await self.update(manager, 0, "a", "b")
+        manager.hass.bus.events.clear()
+        self.positions["person.tracker"] = FAR
+        await self.update(manager, 700, "b")  # held far fix
+
+        self.clock.at(710)
+        await manager.async_force_refresh()
+
+        self.assertTrue(manager.data.proximity)
+        self.assertEqual("resync_b", manager.data.last_error)
+        self.assertEqual([], manager.hass.bus.names())
+
+        self.clock.at(761)
+        self.timers.calls[-1].action(self.clock.now)
+        await self.run_scheduled(manager)
+
+        self.assertFalse(manager.data.proximity)
+        self.assertEqual([LEAVE], manager.hass.bus.names())
+
+    async def test_other_side_update_during_hold_waits_for_hold_end(self) -> None:
+        manager = self.make_manager()
+        await self.update(manager, 0, "a", "b")
+        await self.update(manager, 300, "a")
+        self.positions["person.tracker"] = FAR
+        await self.update(manager, 700, "b")  # tracker quiet for 700 s: held
+        manager.hass.bus.events.clear()
+
+        await self.update(manager, 705, "a")
+
+        self.assertTrue(manager.data.proximity)
+        self.assertEqual("resync_b", manager.data.last_error)
+        self.assertEqual([], manager.hass.bus.names())
+        # The base update is genuine and still counted (older entries pruned).
+        self.assertEqual(START + timedelta(seconds=705), manager.a_update_history[-1])
+        self.assertEqual(1, len(manager.b_update_history))
+
     async def test_speed_filtered_sample_still_marks_data_invalid(self) -> None:
         manager = self.make_manager(max_speed_kmh=150)
         await self.update(manager, 0, "a", "b")
@@ -450,6 +497,42 @@ class RestoreStateTests(_Case):
 
         self.assertEqual([ENTER_UNRELIABLE], manager.hass.bus.names())
         self.assertEqual(0, manager.data.proximity_update_count)
+
+    async def test_saved_state_of_disabled_sensor_is_ignored(self) -> None:
+        self.saved_state(
+            {"proximity": True, "raw_proximity": True, "proximity_update_count": 2},
+            disabled=True,
+        )
+        manager = self.make_manager()
+        self.positions["person.tracker"] = FAR
+
+        await manager.async_start()
+
+        self.assertEqual([], manager.hass.bus.names())
+        self.assertFalse(manager.data.proximity)
+
+    async def test_disabled_binary_sensor_saves_nothing(self) -> None:
+        manager = self.make_manager()
+        entity = binary_sensor_module.MemberAdjacencyProximityBinary(manager)
+
+        entity.registry_entry = types.SimpleNamespace(disabled=True)
+        self.assertIsNone(entity.extra_restore_state_data)
+
+        entity.registry_entry = types.SimpleNamespace(disabled=False)
+        self.assertEqual(
+            manager.restore_snapshot(), entity.extra_restore_state_data.as_dict()
+        )
+
+    async def test_restored_on_state_is_not_a_proximity_update(self) -> None:
+        self.saved_state(
+            {"proximity": True, "raw_proximity": True, "proximity_update_count": 2}
+        )
+        manager = self.make_manager(require_reliable_proximity=False)
+
+        await manager.async_start()
+
+        self.assertEqual([], manager.hass.bus.names())
+        self.assertEqual(2, manager.data.proximity_update_count)
 
     async def test_binary_sensor_saves_what_the_manager_restores(self) -> None:
         restore_entity = sys.modules["homeassistant.helpers.restore_state"].RestoreEntity
@@ -549,6 +632,63 @@ class ForcedRefreshTests(_Case):
         self.assertEqual(1, len(manager.a_update_history))
         self.assertEqual(0, len(manager.b_update_history))
         self.assertTrue(self.timers.calls[0].cancelled)
+
+    async def test_forced_refresh_while_on_is_not_a_proximity_update(self) -> None:
+        manager = self.make_manager()
+        await self.update(manager, 0, "a", "b")
+        manager.hass.bus.events.clear()
+
+        self.clock.at(30)
+        await manager.async_force_refresh()
+
+        self.assertEqual([], manager.hass.bus.names())
+        self.assertEqual(1, manager.data.proximity_update_count)
+
+        await self.update(manager, 40, "a")
+
+        self.assertEqual([UPDATE], manager.hass.bus.names())
+        self.assertEqual(2, manager.data.proximity_update_count)
+
+
+class UnloadTests(_Case):
+    """A stopped manager does nothing; unload stops it before the platforms."""
+
+    async def test_stopped_manager_ignores_late_refreshes(self) -> None:
+        manager = self.make_manager(debounce_seconds=2)
+        await self.update(manager, 0, "a", "b")
+        manager.hass.bus.events.clear()
+        manager.request_refresh("person.base")
+
+        await manager.async_stop()
+        self.positions["person.tracker"] = FAR
+        self.clock.at(700)
+        await manager.async_force_refresh()
+        manager.request_refresh("person.tracker")
+        await self.update(manager, 710, "b")
+
+        self.assertEqual([], manager.hass.bus.names())
+        self.assertTrue(manager.data.proximity)
+        self.assertEqual(set(), manager._pending_changed_sides)
+        self.assertEqual({}, manager._hold_end_timers)
+        self.assertEqual(1, len(self.timers.calls))  # only the first debounce
+
+    async def test_unload_stops_manager_before_platforms(self) -> None:
+        manager = self.make_manager()
+        order: list[str] = []
+
+        async def _unload_platforms(_entry, _platforms) -> bool:
+            order.append("stopped" if manager._stopped else "running")
+            return True
+
+        hass = FakeHass()
+        hass.data = {package.DOMAIN: {"entry-test": manager}}
+        hass.config_entries = types.SimpleNamespace(
+            async_unload_platforms=_unload_platforms
+        )
+
+        self.assertTrue(await package.async_unload_entry(hass, manager.entry))
+        self.assertEqual(["stopped"], order)
+        self.assertNotIn("entry-test", hass.data[package.DOMAIN])
 
 
 class DistanceFailureTests(_Case):
@@ -745,6 +885,19 @@ class DurationSensorTests(_Case):
         await sensor.async_added_to_hass()
 
         self.assertEqual([], intervals)
+
+    def test_ticking_duration_attributes_are_not_recorded(self) -> None:
+        unrecorded = (
+            sensor_module.MemberAdjacencyProximityDurationSensor._unrecorded_attributes
+        )
+
+        self.assertEqual(
+            frozenset({"proximity_duration_min", "proximity_duration_human"}),
+            unrecorded,
+        )
+        self.assertFalse(
+            getattr(sensor_module.MemberAdjacencyDistanceSensor, "_unrecorded_attributes", frozenset())
+        )
 
 
 class ConfigFlowCoordinateTests(unittest.TestCase):

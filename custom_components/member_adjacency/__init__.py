@@ -63,12 +63,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a Member Adjacency entry."""
+    manager: AdjacencyManager | None = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if manager:
+        # Stop first, so the state the binary sensor saves while its platform
+        # unloads is final and no refresh runs on a half-unloaded entry.
+        await manager.async_stop()
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        manager: AdjacencyManager | None = hass.data.get(DOMAIN, {}).pop(
-            entry.entry_id,
-            None,
-        )
-        if manager:
-            await manager.async_stop()
+        hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     return unload_ok
