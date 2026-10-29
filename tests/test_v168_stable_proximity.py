@@ -535,6 +535,7 @@ class RestoreStateTests(_Case):
         self.assertEqual(2, manager.data.proximity_update_count)
 
     async def test_restart_inside_resync_hold_keeps_the_hold(self) -> None:
+        last_valid = (START - timedelta(seconds=20)).isoformat()
         self.saved_state(
             {
                 "proximity": True,
@@ -543,6 +544,7 @@ class RestoreStateTests(_Case):
                 "b_resync_until": (START + timedelta(seconds=50)).isoformat(),
                 "data_valid": True,
                 "distance_m": 100.1,
+                "last_valid_updated": last_valid,
             }
         )
         manager = self.make_manager()
@@ -555,6 +557,7 @@ class RestoreStateTests(_Case):
         self.assertTrue(manager.data.data_valid)
         self.assertEqual(100.1, manager.data.distance_m)
         self.assertEqual("near", manager.data.bucket)
+        self.assertEqual(last_valid, manager.data.last_valid_updated)
         self.assertEqual("resync_b", manager.data.last_error)
         self.assertAlmostEqual(51.0, self.timers.calls[-1].delay)
 
@@ -562,6 +565,41 @@ class RestoreStateTests(_Case):
         self.timers.calls[-1].action(self.clock.now)
         await self.run_scheduled(manager)
 
+        self.assertEqual([LEAVE], manager.hass.bus.names())
+
+    async def test_saved_hold_never_outlasts_configured_hold(self) -> None:
+        self.saved_state(
+            {
+                "proximity": True,
+                "raw_proximity": True,
+                "proximity_update_count": 1,
+                # Saved while the clock was a day ahead.
+                "a_resync_until": (START + timedelta(days=1)).isoformat(),
+                "distance_m": 10**400,  # not a usable float
+            }
+        )
+        manager = self.make_manager(resync_hold_s=30)
+
+        await manager.async_start()
+
+        self.assertEqual(START + timedelta(seconds=30), manager.a_resync_until)
+        self.assertIsNone(manager.data.distance_m)
+
+    async def test_saved_hold_is_dropped_when_hold_is_turned_off(self) -> None:
+        self.saved_state(
+            {
+                "proximity": True,
+                "raw_proximity": True,
+                "proximity_update_count": 1,
+                "b_resync_until": (START + timedelta(seconds=50)).isoformat(),
+            }
+        )
+        manager = self.make_manager(resync_hold_s=0)
+        self.positions["person.tracker"] = FAR
+
+        await manager.async_start()
+
+        self.assertIsNone(manager.b_resync_until)
         self.assertEqual([LEAVE], manager.hass.bus.names())
 
     async def test_saved_distance_is_not_restored_without_a_hold(self) -> None:

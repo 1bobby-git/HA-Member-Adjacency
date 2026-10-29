@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import math
 from collections.abc import Callable, Collection
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.core import callback
@@ -74,6 +74,17 @@ def _parse_utc(value: Any) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else None
+
+
+def _saved_distance(value: Any) -> float | None:
+    """A saved distance in meters, if it is a usable number."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        distance = float(value)
+    except OverflowError:
+        return None
+    return distance if math.isfinite(distance) and distance >= 0 else None
 
 
 class AdjacencyManager(BaseAdjacencyManager):
@@ -157,6 +168,7 @@ class AdjacencyManager(BaseAdjacencyManager):
             # calculation from running.
             "data_valid": bool(self.data.data_valid),
             "distance_m": self.data.distance_m,
+            "last_valid_updated": self.data.last_valid_updated,
         }
 
     @callback
@@ -204,25 +216,30 @@ class AdjacencyManager(BaseAdjacencyManager):
         self._proximity_since = (
             _parse_utc(saved.get("proximity_since")) if proximity else None
         )
-        # Continue a resync hold that has not ended yet.
+        # Continue a resync hold that has not ended yet, never for longer than
+        # the configured hold (clock steps, a hold shortened in the options).
         now = dt_util.utcnow()
-        a_until = _parse_utc(saved.get("a_resync_until"))
-        b_until = _parse_utc(saved.get("b_resync_until"))
-        self.a_resync_until = a_until if a_until and a_until > now else None
-        self.b_resync_until = b_until if b_until and b_until > now else None
-        distance = saved.get("distance_m")
-        if (
-            (self.a_resync_until or self.b_resync_until)
-            and isinstance(distance, (int, float))
-            and not isinstance(distance, bool)
-            and math.isfinite(distance)
-            and distance >= 0
-        ):
+        limit = now + timedelta(seconds=max(0, self.resync_hold_s))
+
+        def _hold_end(key: str) -> datetime | None:
+            until = _parse_utc(saved.get(key))
+            if until is None:
+                return None
+            until = min(until, limit)
+            return until if until > now else None
+
+        self.a_resync_until = _hold_end("a_resync_until")
+        self.b_resync_until = _hold_end("b_resync_until")
+        distance = _saved_distance(saved.get("distance_m"))
+        if (self.a_resync_until or self.b_resync_until) and distance is not None:
             # The first calculation will wait for the hold: keep showing the
             # saved values instead of turning the entities unavailable.
-            self.data.distance_m = float(distance)
-            self.data.bucket = _bucket(float(distance))
+            self.data.distance_m = distance
+            self.data.bucket = _bucket(distance)
             self.data.data_valid = saved.get("data_valid") is True
+            last_valid = saved.get("last_valid_updated")
+            if isinstance(last_valid, str):
+                self.data.last_valid_updated = last_valid
 
     # --- refresh scheduling ---
     def _schedule_refresh(
