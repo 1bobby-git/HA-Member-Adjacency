@@ -15,6 +15,7 @@ options reload does not replay enter events.
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Callable, Collection
 from datetime import datetime
 from typing import Any
@@ -145,6 +146,17 @@ class AdjacencyManager(BaseAdjacencyManager):
             "last_changed": self.data.last_changed,
             "last_entered": self.data.last_entered,
             "last_left": self.data.last_left,
+            # A reload inside a resync hold must not apply the held fix early.
+            "a_resync_until": (
+                self.a_resync_until.isoformat() if self.a_resync_until else None
+            ),
+            "b_resync_until": (
+                self.b_resync_until.isoformat() if self.b_resync_until else None
+            ),
+            # Shown again only while a restored hold keeps the first
+            # calculation from running.
+            "data_valid": bool(self.data.data_valid),
+            "distance_m": self.data.distance_m,
         }
 
     @callback
@@ -192,6 +204,25 @@ class AdjacencyManager(BaseAdjacencyManager):
         self._proximity_since = (
             _parse_utc(saved.get("proximity_since")) if proximity else None
         )
+        # Continue a resync hold that has not ended yet.
+        now = dt_util.utcnow()
+        a_until = _parse_utc(saved.get("a_resync_until"))
+        b_until = _parse_utc(saved.get("b_resync_until"))
+        self.a_resync_until = a_until if a_until and a_until > now else None
+        self.b_resync_until = b_until if b_until and b_until > now else None
+        distance = saved.get("distance_m")
+        if (
+            (self.a_resync_until or self.b_resync_until)
+            and isinstance(distance, (int, float))
+            and not isinstance(distance, bool)
+            and math.isfinite(distance)
+            and distance >= 0
+        ):
+            # The first calculation will wait for the hold: keep showing the
+            # saved values instead of turning the entities unavailable.
+            self.data.distance_m = float(distance)
+            self.data.bucket = _bucket(float(distance))
+            self.data.data_valid = saved.get("data_valid") is True
 
     # --- refresh scheduling ---
     def _schedule_refresh(

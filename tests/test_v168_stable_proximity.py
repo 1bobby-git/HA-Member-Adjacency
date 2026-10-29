@@ -534,6 +534,71 @@ class RestoreStateTests(_Case):
         self.assertEqual([], manager.hass.bus.names())
         self.assertEqual(2, manager.data.proximity_update_count)
 
+    async def test_restart_inside_resync_hold_keeps_the_hold(self) -> None:
+        self.saved_state(
+            {
+                "proximity": True,
+                "raw_proximity": True,
+                "proximity_update_count": 1,
+                "b_resync_until": (START + timedelta(seconds=50)).isoformat(),
+                "data_valid": True,
+                "distance_m": 100.1,
+            }
+        )
+        manager = self.make_manager()
+        self.positions["person.tracker"] = FAR  # the held fix
+
+        await manager.async_start()
+
+        self.assertEqual([], manager.hass.bus.names())
+        self.assertTrue(manager.data.proximity)
+        self.assertTrue(manager.data.data_valid)
+        self.assertEqual(100.1, manager.data.distance_m)
+        self.assertEqual("near", manager.data.bucket)
+        self.assertEqual("resync_b", manager.data.last_error)
+        self.assertAlmostEqual(51.0, self.timers.calls[-1].delay)
+
+        self.clock.at(51)
+        self.timers.calls[-1].action(self.clock.now)
+        await self.run_scheduled(manager)
+
+        self.assertEqual([LEAVE], manager.hass.bus.names())
+
+    async def test_saved_distance_is_not_restored_without_a_hold(self) -> None:
+        self.saved_state(
+            {
+                "proximity": True,
+                "raw_proximity": True,
+                "proximity_update_count": 1,
+                "data_valid": True,
+                "distance_m": 100.1,
+            }
+        )
+        manager = self.make_manager()
+        self.positions["person.base"] = None  # source not ready at startup
+
+        await manager.async_start()
+
+        self.assertFalse(manager.data.data_valid)
+        self.assertIsNone(manager.data.distance_m)
+
+    async def test_expired_saved_hold_is_ignored(self) -> None:
+        self.saved_state(
+            {
+                "proximity": True,
+                "raw_proximity": True,
+                "proximity_update_count": 1,
+                "b_resync_until": (START - timedelta(seconds=5)).isoformat(),
+            }
+        )
+        manager = self.make_manager()
+        self.positions["person.tracker"] = FAR
+
+        await manager.async_start()
+
+        self.assertIsNone(manager.b_resync_until)
+        self.assertEqual([LEAVE], manager.hass.bus.names())
+
     async def test_binary_sensor_saves_what_the_manager_restores(self) -> None:
         restore_entity = sys.modules["homeassistant.helpers.restore_state"].RestoreEntity
         first = self.make_manager()
